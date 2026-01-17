@@ -88,7 +88,7 @@ export default function ReminderActionSheet({
               </button>
 
               {/* Skip - Only for pending/scheduled with frequency */}
-              {isPending && frequency > 0 && (
+              {isPending && Number(frequency) > 0 && (
                 <button
                   className="w-full px-4 py-3 rounded-lg bg-orange-600 text-white font-medium hover:bg-orange-700 transition-colors flex items-center justify-center gap-2"
                   onClick={() => {

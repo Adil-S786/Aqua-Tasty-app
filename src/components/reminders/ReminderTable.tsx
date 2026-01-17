@@ -215,7 +215,7 @@ export default function ReminderTable({
                                     </td>
 
                                     <td className="p-3 w-[15%] text-center text-gray-700 dark:text-gray-300">
-                                        {r.frequency > 0 ? `${r.frequency} days` : "One-time"}
+                                        {Number(r.frequency) > 0 ? `${r.frequency} days` : "One-time"}
                                     </td>
 
                                     <td className="p-3 w-[15%] text-center capitalize">
