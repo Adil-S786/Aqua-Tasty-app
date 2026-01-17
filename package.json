@@ -16,7 +16,7 @@
     "html2pdf.js": "^0.12.1",
     "jspdf": "^3.0.3",
     "lucide-react": "^0.553.0",
-    "next": "16.0.1",
+    "next": "16.1.0",
     "react": "19.2.0",
     "react-date-range": "^2.0.1",
     "react-datepicker": "^8.9.0",
