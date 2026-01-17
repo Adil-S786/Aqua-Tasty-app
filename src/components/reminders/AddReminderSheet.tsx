@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
 import { Endpoints } from "@/config/endpoints";
+import { Sparkles, Calendar, Clock, User, FileText, Repeat } from "lucide-react";
 
 export default function AddReminderSheet({
     isOpen,
@@ -19,7 +20,6 @@ export default function AddReminderSheet({
     initialData?: any | null;
     onSaved?: () => void;
 }) {
-    // form: frequency stored as number (0..20)
     const emptyForm = {
         customer_id: null as number | null,
         custom_name: "",
@@ -35,8 +35,10 @@ export default function AddReminderSheet({
     const [suggestions, setSuggestions] = useState<any[]>([]);
     const [showSug, setShowSug] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [customerPattern, setCustomerPattern] = useState<any>(null);
+    const [loadingPattern, setLoadingPattern] = useState(false);
 
-    // prefill when editing / opening
+    // Prefill when editing / opening
     useEffect(() => {
         if (!isOpen) return;
         if (initialData) {
@@ -46,22 +48,49 @@ export default function AddReminderSheet({
                 reason: initialData.reason ?? "delivery",
                 frequency: Number(initialData.frequency ?? 0),
                 next_date: initialData.next_date
-                    ? initialData.next_date.slice(0, 10) + "T00:00:00"
+                    ? initialData.next_date.slice(0, 10)
                     : "",
-
                 note: initialData.note ?? "",
                 status: initialData.status ?? "pending",
             });
             setQuery(initialData.customer_name ?? initialData.custom_name ?? "");
+            
+            // Load pattern if profiled customer
+            if (initialData.customer_id) {
+                fetchCustomerPattern(initialData.customer_id);
+            }
         } else {
             setForm(emptyForm);
             setQuery("");
+            setCustomerPattern(null);
         }
-        // hide suggestions when sheet opens
         setShowSug(false);
     }, [isOpen, initialData]);
 
-    // safe suggestions: only depends on `query` and `customers` (no setState loops)
+    // Fetch customer pattern
+    const fetchCustomerPattern = async (customerId: number) => {
+        setLoadingPattern(true);
+        try {
+            const res = await api.get(Endpoints.customerPattern(customerId));
+            setCustomerPattern(res.data);
+            
+            // Auto-suggest frequency if available
+            if (res.data.average_days_between_orders && !initialData) {
+                setForm((f: any) => ({
+                    ...f,
+                    frequency: res.data.average_days_between_orders
+                }));
+            }
+        } catch (err: any) {
+            console.error("Failed to load pattern:", err);
+            // Don't show error to user - pattern is optional
+            setCustomerPattern(null);
+        } finally {
+            setLoadingPattern(false);
+        }
+    };
+
+    // Suggestions
     useEffect(() => {
         const q = (query || "").trim();
         if (!q) {
@@ -88,9 +117,9 @@ export default function AddReminderSheet({
         setQuery(c.name);
         setSuggestions([]);
         setShowSug(false);
+        fetchCustomerPattern(c.id);
     };
 
-    // when user blurs/picks save, determine if profiled or custom
     const resolveProfileOrCustom = () => {
         const found = customers.find(
             (c: any) => (c.name || "").toLowerCase() === (query || "").trim().toLowerCase()
@@ -113,13 +142,13 @@ export default function AddReminderSheet({
             return;
         }
         if (!form.next_date) {
-            toast.error("Please pick next date & time");
+            toast.error("Please pick next date");
             return;
         }
 
         const freq = Number(form.frequency) || 0;
-        if (resolved.customer_id && (freq < 0 || freq > 20)) {
-            toast.error("Frequency must be between 0 and 20");
+        if (freq < 0 || freq > 30) {
+            toast.error("Frequency must be between 0 and 30 days");
             return;
         }
 
@@ -127,8 +156,8 @@ export default function AddReminderSheet({
             customer_id: resolved.customer_id ?? null,
             custom_name: resolved.customer_id ? null : resolved.custom_name,
             reason: form.reason,
-            frequency: resolved.customer_id ? freq : 0,
-            next_date: new Date(form.next_date).toISOString(),
+            frequency: freq,
+            next_date: new Date(form.next_date + "T00:00:00").toISOString(),
             note: form.note || null,
             status: form.status || "pending",
         };
@@ -137,10 +166,10 @@ export default function AddReminderSheet({
         try {
             if (initialData && initialData.id) {
                 await api.put(Endpoints.reminderById(initialData.id), payload);
-                toast.success("Reminder updated");
+                toast.success("Reminder updated successfully!");
             } else {
                 await api.post(Endpoints.reminders, payload);
-                toast.success("Reminder created");
+                toast.success("Reminder created successfully!");
             }
             onSaved?.();
             onClose();
@@ -156,7 +185,7 @@ export default function AddReminderSheet({
             {isOpen && (
                 <>
                     <motion.div
-                        className="fixed inset-0 bg-black/40 z-40"
+                        className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -164,103 +193,152 @@ export default function AddReminderSheet({
                     />
 
                     <motion.div
-                        className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl p-5 shadow-xl z-50 max-h-[92vh] overflow-auto"
+                        className="fixed bottom-0 left-0 right-0 bg-white dark:bg-[#062E33] rounded-t-3xl p-6 shadow-2xl z-50 max-h-[90vh] overflow-auto"
                         initial={{ y: "100%" }}
                         animate={{ y: 0 }}
                         exit={{ y: "100%" }}
                         transition={{ type: "spring", stiffness: 160, damping: 20 }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <h2 className="text-xl font-semibold mb-3">
-                            {initialData ? "Edit Reminder" : "Add Reminder"}
+                        <h2 className="text-2xl font-bold mb-4 text-[#045b68] dark:text-[#B4F2EE] flex items-center gap-2">
+                            {initialData ? "Edit Reminder" : "Create New Reminder"}
+                            {!initialData && <Sparkles size={20} className="text-blue-500" />}
                         </h2>
 
-                        {/* Customer input + suggestions */}
-                        <label className="text-sm text-gray-700 mb-1 block">Customer name</label>
-                        <div className="relative mb-3">
-                            <input
-                                className="input"
-                                placeholder="Start typing name — suggestions show profiled customers"
-                                value={query}
-                                onChange={(e) => {
-                                    setQuery(e.target.value);
-                                    // assume typing -> custom until a suggestion is selected
-                                    setForm((f: any) => ({ ...f, customer_id: null, custom_name: e.target.value }));
-                                    setShowSug(true);
-                                }}
-                                onFocus={() => setShowSug(true)}
-                                onBlur={() => setTimeout(() => setShowSug(false), 120)}
-                            />
-                            {showSug && suggestions.length > 0 && (
-                                <div className="absolute left-0 right-0 bg-white rounded-xl shadow-md mt-1 z-50 max-h-44 overflow-auto">
-                                    {suggestions.map((c: any) => (
-                                        <div
-                                            key={c.id}
-                                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-3"
-                                            onMouseDown={(e) => { e.preventDefault(); pickSuggestion(c); }}
-                                        >
-                                            <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-600" />
-                                            <div>
-                                                <div className="font-medium">{c.name}</div>
-                                                {c.phone && <div className="text-xs text-gray-500">{c.phone}</div>}
+                        {/* Customer Input */}
+                        <div className="mb-4">
+                            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <User size={16} />
+                                Customer Name
+                            </label>
+                            <div className="relative">
+                                <input
+                                    className="input w-full"
+                                    placeholder="Type customer name (profiled customers will show suggestions)"
+                                    value={query}
+                                    onChange={(e) => {
+                                        setQuery(e.target.value);
+                                        setForm((f: any) => ({ ...f, customer_id: null, custom_name: e.target.value }));
+                                        setShowSug(true);
+                                        setCustomerPattern(null);
+                                    }}
+                                    onFocus={() => setShowSug(true)}
+                                    onBlur={() => setTimeout(() => setShowSug(false), 150)}
+                                />
+                                {showSug && suggestions.length > 0 && (
+                                    <div className="absolute left-0 right-0 bg-white dark:bg-[#0C3C40] rounded-xl shadow-lg mt-1 z-50 max-h-48 overflow-auto border border-gray-200 dark:border-gray-700">
+                                        {suggestions.map((c: any) => (
+                                            <div
+                                                key={c.id}
+                                                className="px-4 py-3 hover:bg-gray-100 dark:hover:bg-[#045b68] cursor-pointer flex items-center gap-3 transition-colors"
+                                                onMouseDown={(e) => { e.preventDefault(); pickSuggestion(c); }}
+                                            >
+                                                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
+                                                <div className="flex-1">
+                                                    <div className="font-medium text-gray-900 dark:text-white">{c.name}</div>
+                                                    {c.phone && <div className="text-xs text-gray-500 dark:text-gray-400">{c.phone}</div>}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Reason */}
-                        <label className="text-sm text-gray-700 mb-1 block">Reason</label>
-                        <select
-                            className="input mb-3"
-                            value={form.reason}
-                            onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                        >
-                            <option value="delivery">Delivery</option>
-                            <option value="due">Due</option>
-                            <option value="jar_return">Jar Return</option>
-                            <option value="manual">Manual</option>
-                            <option value="other">Other</option>
-                        </select>
-
-                        {/* Frequency numeric 0..20 */}
-                        <div className="mb-3">
-                            <label className="text-sm text-gray-700 block">Frequency (days) — 0 = one-time</label>
-                            <input
-                                type="number"
-                                min={0}
-                                max={20}
-                                className="input"
-                                value={form.frequency}
-                                onChange={(e) => setForm({ ...form, frequency: Number(e.target.value) })}
-                            />
-                            <div className="text-xs text-gray-500 mt-1">
-                                For profiled customers frequency 0..20. If 0 → single reminder; 1 → daily; 3 → every 3 days.
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        {/* Next date/time */}
-                        <label className="block text-sm text-gray-600 mb-1">Next reminder</label>
-                        <input
-                            type="date"
-                            className="input mb-3"
-                            value={form.next_date}
-                            onChange={(e) => setForm({ ...form, next_date: e.target.value })}
-                        />
+                        {/* Pattern Info */}
+                        {customerPattern && (
+                            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                                    <Sparkles size={14} />
+                                    <span className="font-medium">Smart Suggestion:</span>
+                                </div>
+                                <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                                    {customerPattern.recommendation}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Reason */}
+                        <div className="mb-4">
+                            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <FileText size={16} />
+                                Reason
+                            </label>
+                            <select
+                                className="input w-full"
+                                value={form.reason}
+                                onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                            >
+                                <option value="delivery">Delivery</option>
+                                <option value="due">Payment Due</option>
+                                <option value="jar_return">Jar Return</option>
+                                <option value="follow_up">Follow Up</option>
+                                <option value="manual">Manual</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+
+                        {/* Frequency */}
+                        <div className="mb-4">
+                            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <Repeat size={16} />
+                                Frequency (days)
+                            </label>
+                            <input
+                                type="number"
+                                min={0}
+                                max={30}
+                                className="input w-full"
+                                value={form.frequency}
+                                onChange={(e) => setForm({ ...form, frequency: Number(e.target.value) })}
+                            />
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                0 = One-time reminder • 1-30 = Recurring every N days
+                            </p>
+                        </div>
+
+                        {/* Next Date */}
+                        <div className="mb-4">
+                            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <Calendar size={16} />
+                                Next Reminder Date
+                            </label>
+                            <input
+                                type="date"
+                                className="input w-full"
+                                value={form.next_date}
+                                onChange={(e) => setForm({ ...form, next_date: e.target.value })}
+                            />
+                        </div>
 
                         {/* Note */}
-                        <textarea
-                            className="input h-20 mb-3"
-                            placeholder="Note (optional)"
-                            value={form.note}
-                            onChange={(e) => setForm({ ...form, note: e.target.value })}
-                        />
+                        <div className="mb-6">
+                            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                <FileText size={16} />
+                                Note (Optional)
+                            </label>
+                            <textarea
+                                className="input w-full h-20 resize-none"
+                                placeholder="Add any additional notes..."
+                                value={form.note}
+                                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                            />
+                        </div>
 
-                        <div className="flex gap-3 mt-4">
-                            <button onClick={onClose} className="btn bg-gray-300 text-black flex-1">Cancel</button>
-                            <button onClick={handleSave} className="btn flex-1" disabled={saving}>
-                                {saving ? "Saving..." : initialData ? "Update" : "Save"}
+                        {/* Actions */}
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={onClose} 
+                                className="flex-1 px-4 py-3 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleSave} 
+                                className="flex-1 px-4 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={saving}
+                            >
+                                {saving ? "Saving..." : initialData ? "Update Reminder" : "Create Reminder"}
                             </button>
                         </div>
                     </motion.div>

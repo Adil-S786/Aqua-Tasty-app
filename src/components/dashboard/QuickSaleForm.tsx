@@ -1,6 +1,7 @@
-// frontend\src\components\dashboard\QuickSaleForm.tsx
+// frontend/src/components/dashboard/QuickSaleForm.tsx
 "use client";
-import { useState, useEffect } from "react";
+
+import { useState, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
 import { Endpoints } from "@/config/endpoints";
@@ -9,17 +10,16 @@ export default function QuickSaleForm({
   customers = [],
   sales = [],
   prefillName = "",
-  initialData = null,      // ⭐ NEW
+  initialData = null,
   saleDate = null,
   onSaleSaved,
 }: {
   customers: any[];
   sales: any[];
   prefillName?: string;
-  initialData?: any;       // ⭐ NEW
+  initialData?: any;
   onSaleSaved?: () => void;
   saleDate?: string | null;
-
 }) {
   const [isProfiled, setIsProfiled] = useState(true);
 
@@ -36,12 +36,12 @@ export default function QuickSaleForm({
   const [form, setForm] = useState(emptyForm);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [focused, setFocused] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // ⭐ NEW — Prefill form when editing a sale
+  // ---------------- PREFILL (EDIT / SELL AGAIN) ----------------
   useEffect(() => {
     if (initialData) {
       setIsProfiled(!!initialData.customer_id);
-
       setForm({
         customer_name:
           initialData.customer_name ||
@@ -58,22 +58,52 @@ export default function QuickSaleForm({
     }
   }, [initialData]);
 
-  // Prefill name when Sell Again
   useEffect(() => {
     if (!initialData) {
       setForm((f) => ({ ...f, customer_name: prefillName }));
     }
   }, [prefillName]);
 
-  // Auto calculations
+  // ---------------- CALCULATIONS ----------------
   const totalAmount =
     Number(form.total_jars || 0) * Number(form.price_per_jar || 0);
 
-  const dueAmount =
-    totalAmount - Number(form.amount_paid || 0) > 0
-      ? totalAmount - Number(form.amount_paid || 0)
-      : 0;
+  const paidAmount = Number(form.amount_paid || 0);
 
+  const dueAmount =
+    totalAmount - paidAmount > 0 ? totalAmount - paidAmount : 0;
+
+  const jarDue = useMemo(() => {
+    if (isProfiled && !form.customer_id) return 0;
+    if (!isProfiled && !form.customer_name) return 0;
+
+    return sales
+      .filter((s) =>
+        isProfiled
+          ? s.customer_id === form.customer_id
+          : s.customer_name === form.customer_name
+      )
+      .reduce((sum, s) => sum + (s.our_jars || 0), 0);
+  }, [sales, isProfiled, form.customer_id, form.customer_name]);
+
+  const previousDue = useMemo(() => {
+    if (isProfiled && !form.customer_id) return 0;
+    if (!isProfiled && !form.customer_name) return 0;
+
+    return sales
+      .filter((s) =>
+        isProfiled
+          ? s.customer_id === form.customer_id
+          : s.customer_name === form.customer_name
+      )
+      .reduce((sum, s) => sum + (s.due_amount || 0), 0);
+  }, [sales, isProfiled, form.customer_id, form.customer_name]);
+
+  // ✅ EXTRA AMOUNT LOGIC
+  const extraPaid = Math.max(0, paidAmount - totalAmount);
+  const adjustedToPrevDue = Math.min(extraPaid, previousDue);
+
+  // ---------------- NAME HANDLING ----------------
   const handleNameChange = (value: string) => {
     setForm({
       ...form,
@@ -100,17 +130,13 @@ export default function QuickSaleForm({
         type: "walkin",
       }));
 
-    let match = [];
-
-    if (isProfiled) {
-      match = profiledList.filter((c) =>
-        c.name.toLowerCase().includes(value.toLowerCase())
-      );
-    } else {
-      match = walkins.filter((c) =>
-        c.name.toLowerCase().includes(value.toLowerCase())
-      );
-    }
+    const match = isProfiled
+      ? profiledList.filter((c) =>
+          c.name.toLowerCase().includes(value.toLowerCase())
+        )
+      : walkins.filter((c) =>
+          c.name.toLowerCase().includes(value.toLowerCase())
+        );
 
     setSuggestions(match);
   };
@@ -126,98 +152,66 @@ export default function QuickSaleForm({
     setSuggestions([]);
   };
 
+  // ---------------- SAVE ----------------
   const handleSave = async (e: any) => {
     e.preventDefault();
+    if (saving) return;
 
-    if (isProfiled) {
-      const profiled = customers.find(
-        (c) => c.name.toLowerCase() === form.customer_name.toLowerCase()
-      );
-
-      if (!profiled) {
-        toast.error("❌ Profile does not exist!");
-        return;
-      }
-    } else {
-      const exists = customers.find(
-        (c) => c.name.toLowerCase() === form.customer_name.toLowerCase()
-      );
-      if (exists) {
-        toast.error("❌ Profile exists. Use profiled mode.");
-        return;
-      }
-    }
+    setSaving(true);
 
     try {
-      // ⭐ Always normalize walk-in name on frontend
-      if (!isProfiled && form.customer_name) {
-        const clean = form.customer_name.trim().replace(/\s+/g, " ");
-        form.customer_name = clean
-          .split(" ")
-          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-          .join(" ");
-      }
+      const salePaid = Math.min(paidAmount, totalAmount);
+
       const payload = isProfiled
         ? {
-          is_profiled: true,
-          customer_id: form.customer_id,
-          total_jars: Number(form.total_jars),
-          customer_own_jars: Number(form.customer_own_jars),
-          cost_per_jar: Number(form.price_per_jar),
-          amount_paid: Number(form.amount_paid || 0),
-          sale_date: saleDate || null,
-        }
+            is_profiled: true,
+            customer_id: form.customer_id,
+            total_jars: Number(form.total_jars),
+            customer_own_jars: Number(form.customer_own_jars),
+            cost_per_jar: Number(form.price_per_jar),
+            amount_paid: salePaid,
+            sale_date: saleDate || null,
+          }
         : {
-          is_profiled: false,
-          customer_name: form.customer_name || "Walk-in",
-          total_jars: Number(form.total_jars),
-          customer_own_jars: Number(form.customer_own_jars),
-          cost_per_jar: Number(form.price_per_jar),
-          amount_paid: Number(form.amount_paid || 0),
-          sale_date: saleDate || null,
-        };
+            is_profiled: false,
+            customer_name: form.customer_name || "Walk-in",
+            total_jars: Number(form.total_jars),
+            customer_own_jars: Number(form.customer_own_jars),
+            cost_per_jar: Number(form.price_per_jar),
+            amount_paid: salePaid,
+            sale_date: saleDate || null,
+          };
 
-      // ⭐ NEW — EDIT MODE (PUT)
       if (initialData && initialData.id) {
         await api.put(Endpoints.saleById(initialData.id), payload);
-        toast.success("✅ Sale updated!");
       } else {
         await api.post(Endpoints.sales, payload);
-        toast.success("✅ Sale recorded!");
       }
 
+      // ✅ SETTLE EXTRA AMOUNT TO PREVIOUS DUES
+      if (adjustedToPrevDue > 0) {
+        await api.post(Endpoints.payDue, {
+          customer_id: isProfiled ? form.customer_id : null,
+          customer_name: !isProfiled ? form.customer_name : null,
+          amount: adjustedToPrevDue,
+        });
+      }
+
+      toast.success("✅ Sale recorded");
       onSaleSaved?.();
       setForm(emptyForm);
     } catch (err: any) {
-      const msg = err.response?.data?.detail || "Error";
-
-      // ⭐ Detect backend error for duplicate walk-in customer
-      if (
-        msg.toLowerCase().includes("walk-in") &&
-        msg.toLowerCase().includes("already exists")
-      ) {
-        toast.error("🚫 Walk-in customer with same name already exists!");
-        return;
-      }
-
-      // ⭐ Detect backend error for profiled duplicate name
-      if (
-        msg.toLowerCase().includes("customer") &&
-        msg.toLowerCase().includes("already exists")
-      ) {
-        toast.error("🚫 A profiled customer with this name already exists!");
-        return;
-      }
-
-      // default
-      toast.error(msg);
+      toast.error(err.response?.data?.detail || "Error");
+    } finally {
+      setSaving(false);
     }
   };
 
+  // ---------------- UI ----------------
   return (
     <div className="p-4 rounded-xl bg-white/20 backdrop-blur-lg border border-white/30 shadow-lg">
 
-      {/* Simple Toggle */}
+      {/* ✅ RESTORED PROFILED / WALK-IN TOGGLE */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-semibold mr-2">
           {isProfiled ? "Profiled" : "Walk-in"}
@@ -228,7 +222,7 @@ export default function QuickSaleForm({
             setIsProfiled(!isProfiled);
             setSuggestions([]);
           }}
-          className={`w-14 h-7 flex items-center rounded-full cursor-pointer transition-all 
+          className={`w-14 h-7 flex items-center rounded-full cursor-pointer
             ${isProfiled ? "bg-green-500" : "bg-gray-400"}`}
         >
           <div
@@ -247,20 +241,7 @@ export default function QuickSaleForm({
             value={form.customer_name}
             onChange={(e) => handleNameChange(e.target.value)}
             onFocus={() => setFocused(true)}
-            onBlur={() => {
-              setTimeout(() => setFocused(false), 150);
-
-              // ⭐ Normalize only when user finishes typing
-              if (!isProfiled && form.customer_name) {
-                const clean = form.customer_name.trim().replace(/\s+/g, " ");
-                const normalized = clean
-                  .split(" ")
-                  .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-                  .join(" ");
-
-                setForm((f) => ({ ...f, customer_name: normalized }));
-              }
-            }}
+            onBlur={() => setTimeout(() => setFocused(false), 150)}
           />
 
           {focused && suggestions.length > 0 && (
@@ -271,12 +252,11 @@ export default function QuickSaleForm({
                   className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
                   onClick={() => selectCustomer(c)}
                 >
-                  <span className="flex items-center justify-center w-3 h-3">
-                    <span
-                      className={`w-2.5 h-2.5 rounded-full ${c.type === "profiled" ? "bg-green-600" : "bg-gray-500"
-                        }`}
-                    />
-                  </span>
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      c.type === "profiled" ? "bg-green-600" : "bg-gray-500"
+                    }`}
+                  />
                   <span className="text-sm">{c.name}</span>
                 </div>
               ))}
@@ -284,7 +264,6 @@ export default function QuickSaleForm({
           )}
         </div>
 
-        {/* Jars */}
         <input
           className="input"
           type="number"
@@ -293,12 +272,18 @@ export default function QuickSaleForm({
           onChange={(e) => setForm({ ...form, total_jars: e.target.value })}
         />
 
-        {/* Own Jars */}
-        <label className="text-sm font-semibold text-gray-700">
-          Customer’s Own Jars
-        </label>
+        {/* Own Jars + Jar Due */}
+        <div className="flex justify-between items-center">
+          <label className="text-sm font-semibold text-gray-700">
+            Customer’s Own Jars
+          </label>
+          <span className="text-sm text-blue-600">
+            Due Jars: {jarDue}
+          </span>
+        </div>
+
         <input
-          className="input mb-2"
+          className="input"
           type="number"
           placeholder="0"
           value={form.customer_own_jars}
@@ -307,7 +292,6 @@ export default function QuickSaleForm({
           }
         />
 
-        {/* Price */}
         <input
           className="input"
           type="number"
@@ -320,7 +304,6 @@ export default function QuickSaleForm({
           Total Amount: ₹{totalAmount.toFixed(2)}
         </div>
 
-        {/* Paid */}
         <input
           className="input"
           type="number"
@@ -329,13 +312,29 @@ export default function QuickSaleForm({
           onChange={(e) => setForm({ ...form, amount_paid: e.target.value })}
         />
 
-        <div className="text-sm font-semibold text-red-600">
-          Due Amount: ₹{dueAmount.toFixed(2)}
+        <div className="flex justify-between text-sm font-semibold">
+          <span className="text-red-600">
+            Due Amount: ₹{dueAmount.toFixed(2)}
+          </span>
+          <span className="text-gray-600">
+            Prev Due: ₹{previousDue.toFixed(2)}
+          </span>
         </div>
 
-        {/* ⭐ NEW — dynamic button label */}
-        <button className="btn w-full">
-          {initialData ? "Update Sale" : "Save Sale"}
+        {/* ✅ INLINE ADJUSTMENT MESSAGE */}
+        {adjustedToPrevDue > 0 && (
+          <div className="text-sm text-green-700 font-semibold">
+            ₹{adjustedToPrevDue.toFixed(2)} adjusted to previous dues
+          </div>
+        )}
+
+        <button
+          disabled={saving}
+          className={`btn w-full ${
+            saving ? "opacity-60 cursor-not-allowed" : ""
+          }`}
+        >
+          {saving ? "Saving..." : initialData ? "Update Sale" : "Save Sale"}
         </button>
       </form>
     </div>

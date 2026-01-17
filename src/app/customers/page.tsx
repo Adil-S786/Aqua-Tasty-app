@@ -217,6 +217,23 @@ export default function CustomersPage() {
         return filtered;
     }, [customers, sales, jarTrack, search, filter, sortBy]);
 
+    // ------------------ SUMMARY -------------------
+    const summary = useMemo(() => {
+        const total_customers = rows.length;
+        const profiled_count = rows.filter(r => r.is_profiled).length;
+        const walkin_count = rows.filter(r => !r.is_profiled).length;
+        const total_due = rows.reduce((sum, r) => sum + (r.total_due || 0), 0);
+        const total_jar_due = rows.reduce((sum, r) => sum + (r.current_due_jars || 0), 0);
+
+        return {
+            total_customers,
+            profiled_count,
+            walkin_count,
+            total_due,
+            total_jar_due,
+        };
+    }, [rows]);
+
     // ------------------ ACTIONS -------------------
     const openActions = (row: Row) => {
         setSelectedRow(row);
@@ -317,6 +334,28 @@ export default function CustomersPage() {
                         <option value="amount">Sort: Amount Due ↓</option>
                         <option value="recent">Sort: Recent Purchase</option>
                     </select>
+                </div>
+
+                {/* Summary */}
+                <div className="bg-white/60 backdrop-blur-xl p-3 rounded-xl shadow-md">
+                    <div className="grid grid-cols-4 md:grid-cols-5 gap-3">
+                        <div>
+                            <div className="text-sm text-gray-600">Total</div>
+                            <div className="text-lg font-semibold">{summary.total_customers}</div>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-600">Profiled</div>
+                            <div className="text-lg font-semibold text-green-600">{summary.profiled_count}</div>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-600">Total Due</div>
+                            <div className="text-lg font-semibold text-red-600">₹{summary.total_due.toFixed(2)}</div>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-600">Jar Due</div>
+                            <div className="text-lg font-semibold text-blue-700">{summary.total_jar_due}</div>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Table */}

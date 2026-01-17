@@ -43,6 +43,8 @@ export default function SalesPage() {
   const [filter, setFilter] = useState("today");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
 
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
@@ -190,12 +192,14 @@ export default function SalesPage() {
     const total_amount = filteredSales.reduce((s, x) => s + x.total_cost, 0);
     const total_due = filteredSales.reduce((s, x) => s + x.due_amount, 0);
     const total_jars = filteredSales.reduce((s, x) => s + x.our_jars, 0);
+    const jars_sold = filteredSales.reduce((s, x) => s + x.total_jars, 0);
 
     return {
       count: filteredSales.length,
       total_amount,
       total_due,
       total_jars,
+      jars_sold,
     };
   }, [filteredSales]);
 
@@ -216,6 +220,48 @@ export default function SalesPage() {
   const clearCalendar = () => {
     setDateRange([null, null]);
     setCalendarOpen(false);
+  };
+
+  // ------------ Search Suggestions ------------
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+
+    if (!value.trim()) {
+      setSearchSuggestions([]);
+      return;
+    }
+
+    // Get profiled customers
+    const profiledList = customers.map((c) => ({
+      name: c.name,
+      id: c.id,
+      type: "profiled",
+    }));
+
+    // Get walk-in customers from sales
+    const walkins = Array.from(
+      new Set(sales.filter((s) => !s.customer_id).map((s) => s.customer_name))
+    )
+      .filter(Boolean)
+      .map((name) => ({
+        name,
+        id: null,
+        type: "walkin",
+      }));
+
+    // Combine and filter
+    const allCustomers = [...profiledList, ...walkins];
+    const matches = allCustomers.filter((c) =>
+      c.name.toLowerCase().includes(value.toLowerCase())
+    );
+
+    setSearchSuggestions(matches);
+  };
+
+  const selectSearchSuggestion = (customerName: string) => {
+    setSearch(customerName);
+    setSearchSuggestions([]);
+    setSearchFocused(false);
   };
 
 
@@ -292,12 +338,35 @@ export default function SalesPage() {
             </div>
 
             {/* Search */}
-            <input
-              className="input w-48"
-              placeholder="Search customer..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <div className="relative">
+              <input
+                className="input w-48"
+                placeholder="Search customer..."
+                value={search}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+              />
+
+              {searchFocused && searchSuggestions.length > 0 && (
+                <div className="absolute right-0 w-64 bg-white rounded-xl shadow-xl max-h-60 overflow-y-auto z-50 mt-1">
+                  {searchSuggestions.map((c, i) => (
+                    <div
+                      key={i}
+                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                      onClick={() => selectSearchSuggestion(c.name)}
+                    >
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${
+                          c.type === "profiled" ? "bg-green-600" : "bg-gray-500"
+                        }`}
+                      />
+                      <span className="text-sm">{c.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -341,19 +410,25 @@ export default function SalesPage() {
 
         {/* Summary */}
         <div className="bg-white/60 backdrop-blur-xl p-3 rounded-xl shadow-md">
-          <div className="flex justify-between">
+          <div className="grid grid-cols-5 md:grid-cols-5 gap-3">
             <div>
               <div className="text-sm text-gray-600">Records</div>
               <div className="text-lg font-semibold">{summary.count}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Total Sales</div>
+              <div className="text-sm text-gray-600">Sales</div>
               <div className="text-lg font-semibold">₹{summary.total_amount}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">Total Due</div>
+              <div className="text-sm text-gray-600">i Due</div>
               <div className="text-lg font-semibold text-red-600">
                 ₹{summary.total_due}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Jars Sold</div>
+              <div className="text-lg font-semibold text-green-600">
+                {summary.jars_sold}
               </div>
             </div>
             <div>

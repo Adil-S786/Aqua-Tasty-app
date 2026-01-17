@@ -177,25 +177,10 @@ export default function Home() {
 
   const [remindersToday, setRemindersToday] = useState<Reminder[]>([]);
 
-
   const fetchRemindersToday = async () => {
     try {
-      const res = await api.get(Endpoints.reminders);
-      const all = [...(res.data.profiled || []), ...(res.data.customs || [])];
-
-      const today = new Date();
-      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const end = new Date(start);
-      end.setDate(start.getDate() + 1);
-
-      const filtered = all.filter(
-        (r) =>
-          r.status === "pending" &&
-          new Date(r.next_date) >= start &&
-          new Date(r.next_date) < end
-      );
-
-      setRemindersToday(filtered);
+      const res = await api.get(Endpoints.remindersDueToday);
+      setRemindersToday(res.data || []);
     } catch (err) {
       console.error("Failed to load reminders", err);
     }
@@ -271,38 +256,46 @@ export default function Home() {
                   </button>
 
                   {calendarOpen && (
-                    <div
-                      className="absolute top-12 right-0 bg-white shadow-xl rounded-xl z-50 p-2 w-auto max-w-[90vw]"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="scale-[0.85] origin-top mx-auto overflow-visible">
-                        <DateRange
-                          editableDateInputs={true}
-                          moveRangeOnFirstSelection={false}
-                          ranges={range}
-                          onChange={handleRangeChange}
-                        />
-                      </div>
+                    <>
+                      {/* Backdrop for mobile */}
+                      <div 
+                        className="fixed inset-0 bg-black/20 z-40 md:hidden"
+                        onClick={() => setCalendarOpen(false)}
+                      />
+                      
+                      <div
+                        className="fixed md:absolute top-20 md:top-12 left-1/2 md:left-auto md:right-0 -translate-x-1/2 md:translate-x-0 bg-white shadow-xl rounded-xl z-50 p-2 w-[95vw] md:w-auto max-w-[400px] md:max-w-none"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="scale-[0.75] md:scale-[0.85] origin-top mx-auto overflow-visible">
+                          <DateRange
+                            editableDateInputs={true}
+                            moveRangeOnFirstSelection={false}
+                            ranges={range}
+                            onChange={handleRangeChange}
+                          />
+                        </div>
 
-                      <div className="flex justify-between items-center mt-2 px-1">
-                        <button
-                          className="text-red-600 text-sm"
-                          onClick={() => {
-                            const today = new Date();
-                            const formatted = formatLocal(today);
-                            setRange([{ startDate: today, endDate: today, key: "selection" }]);
-                            fetchStats(formatted, formatted);
-                            setCalendarOpen(false);
-                          }}
-                        >
-                          Clear
-                        </button>
+                        <div className="flex justify-between items-center mt-2 px-1">
+                          <button
+                            className="text-red-600 text-sm"
+                            onClick={() => {
+                              const today = new Date();
+                              const formatted = formatLocal(today);
+                              setRange([{ startDate: today, endDate: today, key: "selection" }]);
+                              fetchStats(formatted, formatted);
+                              setCalendarOpen(false);
+                            }}
+                          >
+                            Clear
+                          </button>
 
-                        <button className="btn bg-gray-200 px-3 py-1 text-sm" onClick={() => setCalendarOpen(false)}>
-                          Close
-                        </button>
+                          <button className="btn bg-gray-200 px-3 py-1 text-sm" onClick={() => setCalendarOpen(false)}>
+                            Close
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    </>
                   )}
                 </div>
 

@@ -4,6 +4,7 @@ import api from "@/lib/api";
 import { Endpoints } from "@/config/endpoints";
 import TopNav from "@/components/TopNav";
 import DrawerMenu from "@/components/DrawerMenu";
+import toast from "react-hot-toast";
 
 type Payment = {
   id: number;
@@ -20,6 +21,8 @@ export default function PaymentHistoryPage() {
   const [filter, setFilter] = useState("today");
   const [sortBy, setSortBy] = useState("newest");
 
+  const [deletingId, setDeletingId] = useState<number | null>(null); // ✅ NEW
+
   const fetchPayments = async () => {
     const res = await api.get(Endpoints.payments);
     setPayments(res.data || []);
@@ -29,6 +32,7 @@ export default function PaymentHistoryPage() {
     fetchPayments();
   }, []);
 
+  // ---------------- DATE FILTERS ----------------
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfYesterday = new Date(startOfToday);
@@ -75,6 +79,23 @@ export default function PaymentHistoryPage() {
     all: "All Time",
   }[filter];
 
+  // ---------------- DELETE PAYMENT ----------------
+  const deletePayment = async (id: number) => {
+    if (!confirm("Delete this payment? This action cannot be undone.")) return;
+
+    try {
+      setDeletingId(id);
+      await api.delete(Endpoints.paymentById(id)); // ✅ assumes endpoint exists
+      toast.success("Payment deleted!");
+      fetchPayments();
+    } catch (err) {
+      toast.error("Failed to delete payment");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // ---------------- UI ----------------
   return (
     <main className="pt-2">
       <TopNav onMenuClick={() => setOpen(true)} />
@@ -124,9 +145,10 @@ export default function PaymentHistoryPage() {
           <table className="w-full text-sm">
             <thead className="text-[#055f6a] border-b border-gray-300">
               <tr>
-                <th className="text-left p-2 w-[45%]">Customer</th>
-                <th className="text-center p-2 w-[25%]">Amount Paid</th>
-                <th className="text-right p-2 w-[30%]">Date</th>
+                <th className="text-left p-2 w-[40%]">Customer</th>
+                <th className="text-center p-2 w-[20%]">Amount Paid</th>
+                <th className="text-right p-2 w-[25%]">Date</th>
+                <th className="text-center p-2 w-[15%]">Action</th>
               </tr>
             </thead>
 
@@ -136,31 +158,22 @@ export default function PaymentHistoryPage() {
                   key={p.id}
                   className="border-t border-gray-200 hover:bg-gray-100 transition"
                 >
-                  {/* Customer Name with dot */}
+                  {/* Customer */}
                   <td className="p-2 flex items-center gap-2">
                     <span
                       className={`w-2.5 h-2.5 rounded-full ${
                         p.customer_id ? "bg-green-600" : "bg-gray-400"
                       }`}
                     />
-                    {p.customer_id ? (
-                      <a
-                        href={`/customers/${p.customer_id}`}
-                        className="text-[#045b68] font-medium hover:underline"
-                      >
-                        {p.customer_name}
-                      </a>
-                    ) : (
-                      <span className="text-gray-700">{p.customer_name || "Walk-in"}</span>
-                    )}
+                    <span className="text-gray-700">{p.customer_name || "Walk-in"}</span>
                   </td>
 
-                  {/* Amount Centered */}
+                  {/* Amount */}
                   <td className="p-2 text-center font-semibold text-green-700">
                     ₹{p.amount_paid.toFixed(2)}
                   </td>
 
-                  {/* Date Right-Aligned */}
+                  {/* Date */}
                   <td className="p-2 text-right text-gray-600">
                     {new Date(p.date).toLocaleDateString("en-IN", {
                       day: "2-digit",
@@ -170,12 +183,27 @@ export default function PaymentHistoryPage() {
                       minute: "2-digit",
                     })}
                   </td>
+
+                  {/* Delete */}
+                  <td className="p-2 text-center">
+                    <button
+                      disabled={deletingId === p.id}
+                      onClick={() => deletePayment(p.id)}
+                      className={`text-red-600 hover:text-red-800 font-semibold ${
+                        deletingId === p.id
+                          ? "opacity-50 cursor-not-allowed"
+                          : ""
+                      }`}
+                    >
+                      🗑
+                    </button>
+                  </td>
                 </tr>
               ))}
 
               {filteredPayments.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="text-center p-4 text-gray-500">
+                  <td colSpan={4} className="text-center p-4 text-gray-500">
                     No payments found.
                   </td>
                 </tr>
