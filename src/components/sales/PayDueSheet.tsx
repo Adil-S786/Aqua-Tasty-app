@@ -63,9 +63,13 @@ export default function PayDueSheet({
       const paid = res.data.paid_amount.toFixed(2);
       const remain = res.data.total_due_now.toFixed(2);
 
-      toast.success(
-        `💰 Payment successful!\nPaid: ₹${paid}\nRemaining Due: ₹${remain}`
-      );
+      let message = `💰 Payment successful!\nPaid: ₹${paid}\nRemaining Due: ₹${remain}`;
+      
+      if (res.data.advance_payment_message) {
+        message += `\n\n${res.data.advance_payment_message}`;
+      }
+
+      toast.success(message);
 
       // 🔁 Refresh data instantly
       await onPaid();

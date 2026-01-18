@@ -70,9 +70,6 @@ export default function QuickSaleForm({
 
   const paidAmount = Number(form.amount_paid || 0);
 
-  const dueAmount =
-    totalAmount - paidAmount > 0 ? totalAmount - paidAmount : 0;
-
   const jarDue = useMemo(() => {
     if (isProfiled && !form.customer_id) return 0;
     if (!isProfiled && !form.customer_name) return 0;
@@ -99,9 +96,36 @@ export default function QuickSaleForm({
       .reduce((sum, s) => sum + (s.due_amount || 0), 0);
   }, [sales, isProfiled, form.customer_id, form.customer_name]);
 
-  // ✅ EXTRA AMOUNT LOGIC
-  const extraPaid = Math.max(0, paidAmount - totalAmount);
-  const adjustedToPrevDue = Math.min(extraPaid, previousDue);
+  // Get customer's advance payment
+  const advancePayment = useMemo(() => {
+    if (!isProfiled || !form.customer_id) return 0;
+    const customer = customers.find((c) => c.id === form.customer_id);
+    return customer?.advance_payment || 0;
+  }, [customers, isProfiled, form.customer_id]);
+
+  // ⭐ ENHANCED FIFO CALCULATION: Use advance payment + actual payment
+  const totalAvailablePayment = paidAmount + advancePayment;
+  let remainingPayment = totalAvailablePayment;
+  let settledPreviousDue = 0;
+  let currentSaleDue = totalAmount;
+  
+  // First, settle previous dues
+  if (remainingPayment > 0 && previousDue > 0) {
+    settledPreviousDue = Math.min(remainingPayment, previousDue);
+    remainingPayment -= settledPreviousDue;
+  }
+  
+  // Then, settle current sale with remaining payment
+  if (remainingPayment > 0) {
+    currentSaleDue = Math.max(0, totalAmount - remainingPayment);
+  }
+  
+  // Calculate what previous due will be after this payment
+  const remainingPreviousDue = previousDue - settledPreviousDue;
+  
+  // Calculate how much advance will be used
+  const advanceUsed = Math.min(advancePayment, totalAvailablePayment - remainingPayment);
+  const remainingAdvance = advancePayment - advanceUsed;
 
   // ---------------- NAME HANDLING ----------------
   const handleNameChange = (value: string) => {
@@ -160,8 +184,7 @@ export default function QuickSaleForm({
     setSaving(true);
 
     try {
-      const salePaid = Math.min(paidAmount, totalAmount);
-
+      // ⭐ SEND FULL PAYMENT - Backend handles FIFO automatically
       const payload = isProfiled
         ? {
             is_profiled: true,
@@ -169,7 +192,7 @@ export default function QuickSaleForm({
             total_jars: Number(form.total_jars),
             customer_own_jars: Number(form.customer_own_jars),
             cost_per_jar: Number(form.price_per_jar),
-            amount_paid: salePaid,
+            amount_paid: paidAmount, // Send full amount, backend handles FIFO
             sale_date: saleDate || null,
           }
         : {
@@ -178,26 +201,26 @@ export default function QuickSaleForm({
             total_jars: Number(form.total_jars),
             customer_own_jars: Number(form.customer_own_jars),
             cost_per_jar: Number(form.price_per_jar),
-            amount_paid: salePaid,
+            amount_paid: paidAmount, // Send full amount, backend handles FIFO
             sale_date: saleDate || null,
           };
 
       if (initialData && initialData.id) {
-        await api.put(Endpoints.saleById(initialData.id), payload);
+        const response = await api.put(Endpoints.saleById(initialData.id), payload);
+        if (response.data?.advance_payment_message) {
+          toast.success(`✅ Sale updated. ${response.data.advance_payment_message}`);
+        } else {
+          toast.success("✅ Sale updated");
+        }
       } else {
-        await api.post(Endpoints.sales, payload);
+        const response = await api.post(Endpoints.sales, payload);
+        if (response.data?.advance_payment_message) {
+          toast.success(`✅ Sale recorded. ${response.data.advance_payment_message}`);
+        } else {
+          toast.success("✅ Sale recorded");
+        }
       }
 
-      // ✅ SETTLE EXTRA AMOUNT TO PREVIOUS DUES
-      if (adjustedToPrevDue > 0) {
-        await api.post(Endpoints.payDue, {
-          customer_id: isProfiled ? form.customer_id : null,
-          customer_name: !isProfiled ? form.customer_name : null,
-          amount: adjustedToPrevDue,
-        });
-      }
-
-      toast.success("✅ Sale recorded");
       onSaleSaved?.();
       setForm(emptyForm);
     } catch (err: any) {
@@ -312,19 +335,17 @@ export default function QuickSaleForm({
           onChange={(e) => setForm({ ...form, amount_paid: e.target.value })}
         />
 
-        <div className="flex justify-between text-sm font-semibold">
-          <span className="text-red-600">
-            Due Amount: ₹{dueAmount.toFixed(2)}
-          </span>
-          <span className="text-gray-600">
-            Prev Due: ₹{previousDue.toFixed(2)}
+        <div className="text-sm font-semibold text-red-600">
+          Total Due: ₹{(currentSaleDue + remainingPreviousDue).toFixed(2)}
+          <span className="text-xs text-gray-500 ml-2">
+            (Current: ₹{currentSaleDue.toFixed(2)} + Previous: ₹{remainingPreviousDue.toFixed(2)}
+            {advancePayment > 0 && ` - Advance: ₹${advancePayment.toFixed(2)}`})
           </span>
         </div>
 
-        {/* ✅ INLINE ADJUSTMENT MESSAGE */}
-        {adjustedToPrevDue > 0 && (
-          <div className="text-sm text-green-700 font-semibold">
-            ₹{adjustedToPrevDue.toFixed(2)} adjusted to previous dues
+        {advanceUsed > 0 && (
+          <div className="text-sm text-green-600 font-semibold">
+            ₹{advanceUsed.toFixed(2)} advance payment will be used
           </div>
         )}
 

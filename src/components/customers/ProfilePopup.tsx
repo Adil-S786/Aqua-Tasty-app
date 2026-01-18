@@ -71,15 +71,31 @@ export default function ProfilePopup({
       ]);
 
       // Store all sales
-      setAllSales(salesRes.data);
+      const salesData = salesRes.data || [];
+      const paymentsData = payRes.data || [];
+      
+      // Create payment-only records (payments not associated with sales on same date)
+      const paymentOnlyRecords = paymentsData.map((payment: any) => ({
+        id: `payment-${payment.id}`,
+        date: payment.date,
+        total_jars: 0,
+        total_cost: 0,
+        amount_paid: payment.amount_paid,
+        due_amount: 0,
+        isPaymentOnly: true, // Flag to identify payment-only records
+      }));
+      
+      // Merge sales and payment-only records
+      const allRecords = [...salesData, ...paymentOnlyRecords];
+      setAllSales(allRecords);
 
       // Apply initial filter
-      applyBillFilter(salesRes.data, billFilter);
+      applyBillFilter(allRecords, billFilter);
 
       const jarTrackRow = jarRes.data.find((jt: any) => jt.customer_id === customer.id);
       setJarDue(jarTrackRow ? jarTrackRow.current_due_jars : 0);
 
-      const custPayments = payRes.data.filter((p: any) => p.customer_id === customer.id);
+      const custPayments = paymentsData.filter((p: any) => p.customer_id === customer.id);
       if (custPayments.length > 0) {
         const latest = custPayments.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
         setLastPayment(latest);
@@ -108,6 +124,9 @@ export default function ProfilePopup({
       filtered = [...duesales, ...paidSales].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
     // "all" shows everything
+
+    // ⭐ SORT BY DATE (newest first)
+    filtered.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     setSales(filtered);
     setTotalDue(filtered.reduce((sum: number, s: any) => sum + s.due_amount, 0));
@@ -396,6 +415,11 @@ export default function ProfilePopup({
                 <p><strong>Delivery Type:</strong> {localCustomer.delivery_type}</p>
                 <p><strong>Fixed Price:</strong> ₹{localCustomer.fixed_price_per_jar || "—"}</p>
                 <p><strong>Jars Due:</strong> {jarDue}</p>
+                {localCustomer.advance_payment > 0 && (
+                  <p className="text-green-600 dark:text-green-400 font-semibold">
+                    <strong>Advance Payment:</strong> ₹{localCustomer.advance_payment?.toFixed(2) || "0.00"}
+                  </p>
+                )}
               </div>
 
               {/* Bills */}
@@ -438,10 +462,18 @@ export default function ProfilePopup({
                             year: "2-digit",
                           })}
                         </td>
-                        <td className="text-center p-2 text-blue-600">{s.total_jars || 0}</td>
-                        <td className="text-center p-2">₹{s.total_cost}</td>
-                        <td className="text-center p-2 text-green-600">₹{s.amount_paid}</td>
-                        <td className="text-center p-2 text-red-600 font-semibold">₹{s.due_amount}</td>
+                        <td className="text-center p-2 text-blue-600">
+                          {s.isPaymentOnly ? "—" : (s.total_jars || 0)}
+                        </td>
+                        <td className="text-center p-2">
+                          {s.isPaymentOnly ? "—" : `₹${s.total_cost}`}
+                        </td>
+                        <td className="text-center p-2 text-green-600">
+                          ₹{s.amount_paid}
+                        </td>
+                        <td className="text-center p-2 text-red-600 font-semibold">
+                          {s.isPaymentOnly ? "—" : `₹${s.due_amount}`}
+                        </td>
                       </tr>
                     ))}
 
@@ -457,8 +489,11 @@ export default function ProfilePopup({
                   {sales.length > 0 && (
                     <tfoot>
                       <tr className="font-semibold border-t border-gray-300 dark:border-gray-700">
-                        <td className="p-2">Total Due</td>
-                        <td></td><td></td><td></td>
+                        <td className="p-2">Total</td>
+                        <td className="text-center p-2 text-blue-700">
+                          {sales.reduce((sum: number, s: any) => sum + (s.total_jars || 0), 0)}
+                        </td>
+                        <td></td><td></td>
                         <td className="text-center p-2 text-red-700">₹{totalDue.toFixed(2)}</td>
                       </tr>
                     </tfoot>
