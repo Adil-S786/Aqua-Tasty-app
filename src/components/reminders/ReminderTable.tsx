@@ -21,6 +21,8 @@ export interface Reminder {
     next_date: string;
     note?: string | null;
     status: string;
+    last_sale_date?: string | null;
+    activity_status?: string | null;
 }
 
 interface Props {
@@ -70,8 +72,16 @@ export default function ReminderTable({
     const filtered = useMemo(() => {
         const out = reminders.filter((r) => {
             // status filter
-            if (statusFilter !== "all" && (r.status || "pending") !== statusFilter)
-                return false;
+            if (statusFilter !== "all") {
+                // Check if filtering by customer activity status (active/inactive)
+                if (statusFilter === "active" || statusFilter === "inactive") {
+                    // Filter by customer's activity_status
+                    if (r.activity_status !== statusFilter) return false;
+                } else {
+                    // Filter by reminder status (pending, scheduled, etc.)
+                    if ((r.status || "pending") !== statusFilter) return false;
+                }
+            }
 
             // search
             const term = search.toLowerCase();
@@ -105,7 +115,7 @@ export default function ReminderTable({
             const db = b.next_date ? new Date(b.next_date).getTime() : 0;
             return da - db;
         });
-    }, [reminders, dateFilter, statusFilter, search]);
+    }, [reminders, dateFilter, statusFilter, search, todayStart, todayEnd, tomorrowStart, tomorrowEnd, weekStart, weekEnd, upcomingWeekStart, upcomingWeekEnd, monthStart, monthEnd]);
 
     // ---------------------- RENDER UI ----------------------
     return (
@@ -179,11 +189,11 @@ export default function ReminderTable({
                         className="input !py-1"
                     >
                         <option value="all">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
                         <option value="pending">Pending</option>
                         <option value="scheduled">Scheduled</option>
-                        <option value="completed">Delivered</option>
                         <option value="skipped">Skipped</option>
-                        <option value="rescheduled">Rescheduled</option>
                         <option value="cancelled">Cancelled</option>
                     </select>
                 </div>
@@ -194,24 +204,25 @@ export default function ReminderTable({
                 <table className="w-full text-sm">
                     <thead>
                         <tr className="bg-gray-100 dark:bg-[#0C3C40]">
-                            <th className="p-2 text-left w-[30%]">Customer</th>
-                            <th className="p-2 text-left w-[15%]">Reason</th>
-                            <th className="p-2 w-[25%]">Next Date</th>
-                            <th className="p-2 w-[15%]">Freq</th>
-                            <th className="p-2 w-[15%]">Status</th>
+                            <th className="p-2 text-left w-[25%]">Customer</th>
+                            <th className="p-2 text-left w-[12%]">Reason</th>
+                            <th className="p-2 w-[18%]">Next Date</th>
+                            <th className="p-2 w-[15%]">Last Buy</th>
+                            <th className="p-2 w-[12%]">Freq</th>
+                            <th className="p-2 w-[18%]">Status</th>
                         </tr>
                     </thead>
 
                     <tbody className="relative">
                         {loading ? (
                             <tr>
-                                <td colSpan={5} className="p-4 text-center">
+                                <td colSpan={6} className="p-4 text-center">
                                     Loading...
                                 </td>
                             </tr>
                         ) : filtered.length === 0 ? (
                             <tr>
-                                <td colSpan={5} className="p-4 text-center text-gray-500">
+                                <td colSpan={6} className="p-4 text-center text-gray-500">
                                     No reminders found.
                                 </td>
                             </tr>
@@ -222,7 +233,7 @@ export default function ReminderTable({
                                     className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-[#0C3C40] cursor-pointer transition-colors"
                                     onClick={() => onRowClick(r)}
                                 >
-                                    <td className="p-3 w-[30%]">
+                                    <td className="p-3 w-[25%]">
                                         <div className="font-medium text-gray-900 dark:text-white">
                                             {r.customer_name || r.custom_name}
                                         </div>
@@ -233,11 +244,11 @@ export default function ReminderTable({
                                         )}
                                     </td>
 
-                                    <td className="p-3 w-[15%] capitalize text-gray-700 dark:text-gray-300">
+                                    <td className="p-3 w-[12%] capitalize text-gray-700 dark:text-gray-300">
                                         {r.reason}
                                     </td>
 
-                                    <td className="p-3 text-center w-[25%]">
+                                    <td className="p-3 text-center w-[18%]">
                                         <span className={
                                             new Date(r.next_date) < new Date()
                                                 ? "text-red-600 dark:text-red-400 font-semibold"
@@ -249,24 +260,36 @@ export default function ReminderTable({
                                         </span>
                                     </td>
 
-                                    <td className="p-3 w-[15%] text-center text-gray-700 dark:text-gray-300">
+                                    <td className="p-3 text-center w-[15%] text-gray-700 dark:text-gray-300">
+                                        {r.last_sale_date
+                                            ? format(new Date(r.last_sale_date), "dd-MMM-yyyy")
+                                            : "-"}
+                                    </td>
+
+                                    <td className="p-3 w-[12%] text-center text-gray-700 dark:text-gray-300">
                                         {Number(r.frequency) > 0 ? `${r.frequency} days` : "One-time"}
                                     </td>
 
-                                    <td className="p-3 w-[15%] text-center capitalize">
-                                        <span
-                                            className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
-                                                r.status === "completed"
-                                                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                                    : r.status === "skipped"
-                                                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                                        : r.status === "rescheduled"
-                                                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                                            }`}
-                                        >
-                                            {r.status}
-                                        </span>
+                                    <td className="p-3 w-[18%] text-center">
+                                        {r.activity_status === "inactive" ? (
+                                            <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                                Inactive
+                                            </span>
+                                        ) : (
+                                            <span
+                                                className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                                                    r.status === "completed"
+                                                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                                        : r.status === "skipped"
+                                                            ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                                            : r.status === "rescheduled"
+                                                                ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                                                : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                                }`}
+                                            >
+                                                {r.status}
+                                            </span>
+                                        )}
                                     </td>
                                 </tr>
                             ))
