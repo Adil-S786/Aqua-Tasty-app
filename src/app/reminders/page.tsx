@@ -235,6 +235,25 @@ export default function RemindersPage() {
         }
     };
 
+    const handleDelete = async () => {
+        if (!selectedReminder) return;
+
+        const customerName = selectedReminder.customer_name || selectedReminder.custom_name || "this reminder";
+        if (!confirm(`Delete reminder for ${customerName}? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            await api.delete(`${Endpoints.reminders}/${selectedReminder.id}`);
+            toast.success("Reminder deleted successfully");
+            await fetchReminders();
+            await fetchOverdueReminders();
+        } catch (e) {
+            console.error("Delete failed:", e);
+            toast.error("Failed to delete reminder");
+        }
+    };
+
     return (
         <main className="pt-2">
             <TopNav onMenuClick={() => setDrawerOpen(true)} />
@@ -359,6 +378,7 @@ export default function RemindersPage() {
                     }
                 }}
                 onMarkInactive={handleMarkInactive}
+                onDelete={handleDelete}
             />
 
             {/* Reschedule Popups (one for each reminder) */}

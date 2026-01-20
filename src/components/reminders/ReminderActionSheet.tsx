@@ -12,6 +12,7 @@ export default function ReminderActionSheet({
   onReschedule,
   onMoveTomorrow,
   onMarkInactive,
+  onDelete,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -22,6 +23,7 @@ export default function ReminderActionSheet({
   onReschedule: () => void;
   onMoveTomorrow: () => void;
   onMarkInactive?: () => void;
+  onDelete: () => void;
 }) {
   if (!reminder) return null;
 
@@ -140,6 +142,17 @@ export default function ReminderActionSheet({
                   🔴 Mark Customer Inactive
                 </button>
               )}
+
+              {/* Delete Reminder */}
+              <button
+                className="w-full px-4 py-3 rounded-lg bg-red-700 text-white font-medium hover:bg-red-800 transition-colors flex items-center justify-center gap-2"
+                onClick={() => {
+                  onDelete();
+                  onClose();
+                }}
+              >
+                🗑️ Delete Reminder
+              </button>
 
               {/* Cancel */}
               <button
