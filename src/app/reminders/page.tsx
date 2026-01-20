@@ -49,13 +49,14 @@ export default function RemindersPage() {
             const res = await api.get(Endpoints.remindersOverdue);
             setRemindersOverdue(res.data || []);
         } catch (err: any) {
-            console.error("Failed to load overdue reminders", err);
-            // Don't block the page if overdue fetch fails
+            // Silently handle errors - don't block the page
             setRemindersOverdue([]);
             
-            // Only show error if it's not a 404 (endpoint might not exist in old backend)
-            if (err?.response?.status !== 404) {
-                console.warn("Overdue reminders endpoint error:", err?.response?.data);
+            // Only log to console, don't show to user
+            if (err?.response?.status === 422) {
+                console.warn("Overdue reminders validation error (422) - ignoring");
+            } else if (err?.response?.status !== 404) {
+                console.warn("Overdue reminders error:", err?.response?.status, err?.response?.data);
             }
         }
     };
@@ -200,48 +201,81 @@ export default function RemindersPage() {
         }
     };
 
+    const handleMoveTomorrow = async (id: number) => {
+        try {
+            await api.post(`${Endpoints.reminders}/${id}/move-tomorrow`);
+            toast.success("Reminder moved to tomorrow!");
+            await fetchReminders();
+            await fetchOverdueReminders();
+        } catch (e) {
+            console.error("Move tomorrow failed:", e);
+            toast.error("Failed to move reminder");
+        }
+    };
+
+    const handleMarkInactive = async () => {
+        if (!selectedReminder || !selectedReminder.customer_id) {
+            toast.error("Only profiled customers can be marked inactive");
+            return;
+        }
+
+        const customerName = selectedReminder.customer_name || "this customer";
+        if (!confirm(`Mark ${customerName} as inactive? This will stop auto-generating reminders for them.`)) {
+            return;
+        }
+
+        try {
+            await api.post(`${Endpoints.customers}/${selectedReminder.customer_id}/mark-inactive`);
+            toast.success(`${customerName} marked as inactive`);
+            await fetchReminders();
+            await fetchOverdueReminders();
+        } catch (e) {
+            console.error("Mark inactive failed:", e);
+            toast.error("Failed to mark customer as inactive");
+        }
+    };
+
     return (
         <main className="pt-2">
             <TopNav onMenuClick={() => setDrawerOpen(true)} />
             <DrawerMenu isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
-            <div className="p-4">
+            <div className="p-4 pb-24">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-[#045b68] dark:text-[#B4F2EE]">
-                            Reminders
-                        </h1>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                            Manage delivery schedules and follow-ups
-                        </p>
-                    </div>
+                <div className="mb-4">
+                    <h1 className="text-2xl font-bold text-[#045b68] dark:text-[#B4F2EE] mb-1">
+                        Reminders
+                    </h1>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Manage delivery schedules and follow-ups
+                    </p>
+                </div>
 
-                    <div className="flex gap-2">
-                        <button
-                            onClick={handleGenerateSmart}
-                            disabled={generatingSmart}
-                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <Sparkles size={18} />
-                            {generatingSmart ? "Generating..." : "Smart Generate"}
-                        </button>
+                {/* Action Buttons */}
+                <div className="flex gap-2 mb-4 overflow-x-auto">
+                    <button
+                        onClick={handleGenerateSmart}
+                        disabled={generatingSmart}
+                        className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                        <Sparkles size={16} />
+                        <span>{generatingSmart ? "Generating..." : "Smart"}</span>
+                    </button>
 
-                        <button
-                            onClick={handleAutoAdvance}
-                            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-                            title="Auto-advance overdue reminders to next occurrence"
-                        >
-                            ⏭️ Auto-Advance
-                        </button>
+                    <button
+                        onClick={handleAutoAdvance}
+                        className="flex items-center gap-1.5 px-3 py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
+                        title="Auto-advance overdue reminders"
+                    >
+                        <span>⏭️ Advance</span>
+                    </button>
 
-                        <button
-                            onClick={openAdd}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                            + Add Reminder
-                        </button>
-                    </div>
+                    <button
+                        onClick={openAdd}
+                        className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+                    >
+                        <span>+ Add</span>
+                    </button>
                 </div>
 
                 {/* Overdue Alert */}
@@ -319,6 +353,12 @@ export default function RemindersPage() {
                         dlg?.showModal();
                     }
                 }}
+                onMoveTomorrow={() => {
+                    if (selectedReminder) {
+                        handleMoveTomorrow(selectedReminder.id);
+                    }
+                }}
+                onMarkInactive={handleMarkInactive}
             />
 
             {/* Reschedule Popups (one for each reminder) */}

@@ -10,6 +10,7 @@ export default function CustomerActionSheet({
   onReturnJar,
   onProfileOrConvert,
   onViewBill,
+  onMarkInactive,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -19,6 +20,7 @@ export default function CustomerActionSheet({
   onReturnJar: () => void;
   onProfileOrConvert: () => void;
   onViewBill: () => void;
+  onMarkInactive?: () => void;
 }) {
   const title = row?.is_profiled ? "Customer Profile" : "Walk-in Customer";
 
@@ -64,6 +66,12 @@ export default function CustomerActionSheet({
               {!row.is_profiled && (
                 <button className="btn w-full bg-purple-600" onClick={onViewBill}>
                   View Bill
+                </button>
+              )}
+
+              {row.is_profiled && onMarkInactive && row.activity_status !== "inactive" && (
+                <button className="btn w-full bg-red-600" onClick={onMarkInactive}>
+                  🔴 Mark as Inactive
                 </button>
               )}
 

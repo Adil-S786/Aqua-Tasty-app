@@ -51,6 +51,7 @@ export default function ReminderTable({
     const [dateFilter, setDateFilter] = useState("today");
     const [statusFilter, setStatusFilter] = useState("all");
     const [search, setSearch] = useState("");
+    const [showSuggestions, setShowSuggestions] = useState(false);
 
     // compute date boundaries
     const now = new Date();
@@ -109,21 +110,55 @@ export default function ReminderTable({
     // ---------------------- RENDER UI ----------------------
     return (
         <div className="mb-6 bg-white rounded-xl shadow p-3">
-            <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-ocean">
-                    {type === "profiled"
-                        ? "Upcoming Delivery Reminders"
-                        : "Custom Reminders"}
-                </h2>
+            {/* Header */}
+            <h2 className="text-lg font-semibold text-ocean mb-3">
+                {type === "profiled"
+                    ? "Upcoming Delivery Reminders"
+                    : "Custom Reminders"}
+            </h2>
 
-                <div className="flex gap-2 items-center">
+            {/* Search and Filters Column */}
+            <div className="space-y-2 mb-3">
+                {/* Search Field */}
+                <div className="relative">
                     <input
-                        className="input !py-1"
-                        placeholder="Search..."
+                        className="input !py-1 w-full"
+                        placeholder="Search customer..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
+                        onFocus={() => setShowSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                     />
+                    
+                    {/* Suggestions Dropdown */}
+                    {showSuggestions && search && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto">
+                            {Array.from(new Set(reminders.map(r => r.customer_name || r.custom_name)))
+                                .filter((name) => name?.toLowerCase().includes(search.toLowerCase()))
+                                .slice(0, 10)
+                                .map((name) => (
+                                    <button
+                                        key={name}
+                                        className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                                        onClick={() => {
+                                            setSearch(name || "");
+                                            setShowSuggestions(false);
+                                        }}
+                                    >
+                                        <span className="font-medium">{name}</span>
+                                    </button>
+                                ))}
+                            {Array.from(new Set(reminders.map(r => r.customer_name || r.custom_name)))
+                                .filter((name) => name?.toLowerCase().includes(search.toLowerCase()))
+                                .length === 0 && (
+                                <div className="px-4 py-2 text-gray-500 text-sm">No matches found</div>
+                            )}
+                        </div>
+                    )}
+                </div>
 
+                {/* Filters Row */}
+                <div className="grid grid-cols-2 gap-2">
                     <select
                         value={dateFilter}
                         onChange={(e) => setDateFilter(e.target.value)}

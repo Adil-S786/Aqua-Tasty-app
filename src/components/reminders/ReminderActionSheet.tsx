@@ -10,6 +10,8 @@ export default function ReminderActionSheet({
   onComplete,
   onSkip,
   onReschedule,
+  onMoveTomorrow,
+  onMarkInactive,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -18,6 +20,8 @@ export default function ReminderActionSheet({
   onComplete: () => void;
   onSkip: () => void;
   onReschedule: () => void;
+  onMoveTomorrow: () => void;
+  onMarkInactive?: () => void;
 }) {
   if (!reminder) return null;
 
@@ -87,6 +91,19 @@ export default function ReminderActionSheet({
                 📅 Reschedule
               </button>
 
+              {/* Move to Tomorrow */}
+              {isPending && (
+                <button
+                  className="w-full px-4 py-3 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
+                  onClick={() => {
+                    onMoveTomorrow();
+                    onClose();
+                  }}
+                >
+                  ➡️ Move to Tomorrow
+                </button>
+              )}
+
               {/* Skip - Only for pending/scheduled with frequency */}
               {isPending && Number(frequency) > 0 && (
                 <button
@@ -110,6 +127,19 @@ export default function ReminderActionSheet({
               >
                 ✏️ Edit Reminder
               </button>
+
+              {/* Mark Inactive - Only for profiled customers */}
+              {reminder.customer_id && onMarkInactive && (
+                <button
+                  className="w-full px-4 py-3 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                  onClick={() => {
+                    onMarkInactive();
+                    onClose();
+                  }}
+                >
+                  🔴 Mark Customer Inactive
+                </button>
+              )}
 
               {/* Cancel */}
               <button

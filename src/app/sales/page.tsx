@@ -271,7 +271,7 @@ export default function SalesPage() {
       <TopNav onMenuClick={() => setOpen(true)} />
       <DrawerMenu isOpen={open} onClose={() => setOpen(false)} />
 
-      <div className="p-4 space-y-3 pb-20">
+      <div className="p-4 space-y-3 pb-32">
 
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -420,7 +420,7 @@ export default function SalesPage() {
               <div className="text-lg font-semibold">₹{summary.total_amount}</div>
             </div>
             <div>
-              <div className="text-sm text-gray-600">i Due</div>
+              <div className="text-sm text-gray-600">Due</div>
               <div className="text-lg font-semibold text-red-600">
                 ₹{summary.total_due}
               </div>

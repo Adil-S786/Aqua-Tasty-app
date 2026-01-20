@@ -20,6 +20,7 @@ type Customer = {
     address?: string | null;
     fixed_price_per_jar?: number | null;
     delivery_type?: "self" | "delivery";
+    activity_status?: string;
 };
 
 type Sale = {
@@ -52,13 +53,15 @@ type Row = {
     phone?: string | null;
     fixed_price_per_jar?: number | null;
     address?: string | null;
+    activity_status?: string;
 };
 
 export default function CustomersPage() {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
+    const [showSuggestions, setShowSuggestions] = useState(false);
     const [filter, setFilter] = useState<
-        "all" | "due" | "jar-due" | "profiled" | "walkin"
+        "all" | "due" | "jar-due" | "profiled" | "walkin" | "active" | "inactive" | "onetime" | "occasional" | "was_regular" | "no_pattern"
     >("all");
     const [sortBy, setSortBy] = useState<"jars" | "amount" | "recent">("jars");
 
@@ -139,6 +142,7 @@ export default function CustomersPage() {
                 phone: c.phone || null,
                 fixed_price_per_jar: c.fixed_price_per_jar ?? null,
                 address: c.address || null,
+                activity_status: c.activity_status || "no_pattern",
             };
         }
 
@@ -196,6 +200,13 @@ export default function CustomersPage() {
                 if (filter === "jar-due") return (r.current_due_jars || 0) > 0;
                 if (filter === "profiled") return r.is_profiled;
                 if (filter === "walkin") return !r.is_profiled;
+                // Activity status filters
+                if (filter === "active") return r.activity_status === "active";
+                if (filter === "inactive") return r.activity_status === "inactive";
+                if (filter === "onetime") return r.activity_status === "onetime";
+                if (filter === "occasional") return r.activity_status === "occasional";
+                if (filter === "was_regular") return r.activity_status === "was_regular";
+                if (filter === "no_pattern") return r.activity_status === "no_pattern";
                 return true;
             });
 
@@ -220,14 +231,14 @@ export default function CustomersPage() {
     // ------------------ SUMMARY -------------------
     const summary = useMemo(() => {
         const total_customers = rows.length;
-        const profiled_count = rows.filter(r => r.is_profiled).length;
+        const active_count = rows.filter(r => r.activity_status === "active").length;
         const walkin_count = rows.filter(r => !r.is_profiled).length;
         const total_due = rows.reduce((sum, r) => sum + (r.total_due || 0), 0);
         const total_jar_due = rows.reduce((sum, r) => sum + (r.current_due_jars || 0), 0);
 
         return {
             total_customers,
-            profiled_count,
+            active_count,
             walkin_count,
             total_due,
             total_jar_due,
@@ -294,22 +305,82 @@ export default function CustomersPage() {
         setSaleSheetOpen(true);
     };
 
+    const handleMarkInactive = async (row: Row) => {
+        if (!row.is_profiled || !row.id) {
+            toast.error("Only profiled customers can be marked inactive");
+            return;
+        }
+
+        if (!confirm(`Mark ${row.name} as inactive?`)) return;
+
+        try {
+            await api.post(`${Endpoints.customers}/${row.id}/mark-inactive`);
+            toast.success(`${row.name} marked as inactive`);
+            setActionOpen(false);
+            await refreshAll();
+        } catch (err) {
+            toast.error("Failed to mark customer as inactive");
+        }
+    };
+
+    const handleRefreshStatuses = async () => {
+        toast.loading("Refreshing activity statuses...", { id: "refresh" });
+        try {
+            const res = await api.post(`${Endpoints.customers}/update-activity-status`);
+            toast.success(`Updated! ${JSON.stringify(res.data.summary)}`, { id: "refresh", duration: 5000 });
+            await refreshAll();
+        } catch (err) {
+            toast.error("Failed to refresh statuses", { id: "refresh" });
+        }
+    };
+
     // ------------------ RENDER -------------------
     return (
         <main className="pt-2">
             <TopNav onMenuClick={() => setOpen(true)} />
             <DrawerMenu isOpen={open} onClose={() => setOpen(false)} />
 
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 pb-24">
                 <h1 className="text-xl font-semibold text-[#045b68]">Customers</h1>
 
                 {/* Search */}
-                <input
-                    className="input"
-                    placeholder="Search customer..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                />
+                <div className="relative">
+                    <input
+                        className="input"
+                        placeholder="Search customer..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        onFocus={() => setShowSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    />
+                    
+                    {/* Suggestions Dropdown */}
+                    {showSuggestions && search && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto">
+                            {rows
+                                .filter((r) => r.name.toLowerCase().includes(search.toLowerCase()))
+                                .slice(0, 10)
+                                .map((r) => (
+                                    <button
+                                        key={r.id || r.name}
+                                        className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex justify-between items-center"
+                                        onClick={() => {
+                                            setSearch(r.name);
+                                            setShowSuggestions(false);
+                                        }}
+                                    >
+                                        <span className="font-medium">{r.name}</span>
+                                        <span className="text-xs text-gray-500">
+                                            {r.is_profiled ? "Profiled" : "Walk-in"}
+                                        </span>
+                                    </button>
+                                ))}
+                            {rows.filter((r) => r.name.toLowerCase().includes(search.toLowerCase())).length === 0 && (
+                                <div className="px-4 py-2 text-gray-500 text-sm">No matches found</div>
+                            )}
+                        </div>
+                    )}
+                </div>
 
                 {/* Filters */}
                 <div className="grid grid-cols-2 gap-2">
@@ -318,11 +389,19 @@ export default function CustomersPage() {
                         onChange={(e) => setFilter(e.target.value as any)}
                         className="input"
                     >
-                        <option value="all">All</option>
+                        <option value="all">All Customers</option>
                         <option value="due">Due Amount</option>
                         <option value="jar-due">Due Jars</option>
                         <option value="profiled">Profiled</option>
                         <option value="walkin">Walk-in</option>
+                        <optgroup label="Activity Status">
+                            <option value="active">🟢 Active (buying regularly)</option>
+                            <option value="was_regular">🟡 Was Regular (3+ weeks)</option>
+                            <option value="occasional">🟠 Occasional (2 times)</option>
+                            <option value="onetime">🔵 One-time</option>
+                            <option value="inactive">🔴 Inactive</option>
+                            <option value="no_pattern">⚪ No Pattern</option>
+                        </optgroup>
                     </select>
 
                     <select
@@ -344,8 +423,8 @@ export default function CustomersPage() {
                             <div className="text-lg font-semibold">{summary.total_customers}</div>
                         </div>
                         <div>
-                            <div className="text-sm text-gray-600">Profiled</div>
-                            <div className="text-lg font-semibold text-green-600">{summary.profiled_count}</div>
+                            <div className="text-sm text-gray-600">Active</div>
+                            <div className="text-lg font-semibold text-green-600">{summary.active_count}</div>
                         </div>
                         <div>
                             <div className="text-sm text-gray-600">Total Due</div>
@@ -403,9 +482,17 @@ export default function CustomersPage() {
                     </table>
                 </div>
 
-                {/* Add Customer Button */}
+                {/* Refresh Status Button - Fixed Lower Left */}
                 <button
-                    className="fixed bottom-5 right-5 btn text-lg px-6 py-3 rounded-full"
+                    onClick={handleRefreshStatuses}
+                    className="fixed bottom-5 left-5 px-4 py-3 bg-blue-600 text-white text-sm rounded-full hover:bg-blue-700 transition-colors shadow-lg z-10 flex items-center gap-2"
+                >
+                    🔄 Refresh Status
+                </button>
+
+                {/* Add Customer Button - Fixed Lower Right */}
+                <button
+                    className="fixed bottom-5 right-5 btn text-lg px-6 py-3 rounded-full shadow-lg z-10"
                     onClick={() => {
                         setConvertWalkInName(null);
                         setAddSheetOpen(true);
@@ -450,6 +537,9 @@ export default function CustomersPage() {
                     });
 
                     setWalkinBillOpen(true);
+                }}
+                onMarkInactive={() => {
+                    if (selectedRow) handleMarkInactive(selectedRow);
                 }}
             />
 
