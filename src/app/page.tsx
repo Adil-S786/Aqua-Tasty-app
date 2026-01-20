@@ -179,8 +179,34 @@ export default function Home() {
 
   const fetchRemindersToday = async () => {
     try {
-      const res = await api.get(Endpoints.remindersDueToday);
-      setRemindersToday(res.data || []);
+      // Use same endpoint as reminders page
+      const res = await api.get(Endpoints.reminders);
+      const data = res.data || {};
+      
+      // Get all reminders (profiled + custom)
+      const allReminders = [
+        ...(Array.isArray(data.profiled) ? data.profiled : []),
+        ...(Array.isArray(data.customs) ? data.customs : [])
+      ];
+      
+      // Filter for today's pending/scheduled reminders (same as reminders page "Today" filter)
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEnd = new Date(todayStart);
+      todayEnd.setDate(todayEnd.getDate() + 1);
+      
+      const todayReminders = allReminders.filter((r: any) => {
+        const dt = r.next_date ? new Date(r.next_date) : null;
+        if (!dt) return false;
+        
+        // Check if today and pending/scheduled
+        const isToday = dt >= todayStart && dt < todayEnd;
+        const isPendingOrScheduled = r.status === "pending" || r.status === "scheduled";
+        
+        return isToday && isPendingOrScheduled;
+      });
+      
+      setRemindersToday(todayReminders);
     } catch (err) {
       console.error("Failed to load reminders", err);
     }
