@@ -21,6 +21,8 @@ type Customer = {
     fixed_price_per_jar?: number | null;
     delivery_type?: "self" | "delivery";
     activity_status?: string;
+    total_due?: number; // ⭐ Added for backend response
+    parent_customer_id?: number | null; // ⭐ Added for linked accounts
 };
 
 type Sale = {
