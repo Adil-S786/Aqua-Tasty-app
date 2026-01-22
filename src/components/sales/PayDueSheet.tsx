@@ -21,6 +21,7 @@ export default function PayDueSheet({
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [totalDue, setTotalDue] = useState<number | null>(null);
+  const [linkedAccountsCount, setLinkedAccountsCount] = useState<number>(1);
 
   // 🔁 Fetch total due dynamically when sheet opens
   useEffect(() => {
@@ -32,8 +33,21 @@ export default function PayDueSheet({
           customer_id: sale.customer_id || null,
           customer_name: sale.customer_name || null,
         };
+        console.log("PayDueSheet - Fetching total due with payload:", payload);
         const res = await api.post(Endpoints.totalDue, payload);
+        console.log("PayDueSheet - Total due response:", res.data);
         setTotalDue(res.data.total_due);
+        
+        // Fetch linked accounts info if profiled customer
+        if (sale.customer_id) {
+          try {
+            const linkedRes = await api.get(Endpoints.linkedAccounts(sale.customer_id));
+            console.log("PayDueSheet - Linked accounts:", linkedRes.data);
+            setLinkedAccountsCount(linkedRes.data.total_accounts || 1);
+          } catch (err) {
+            setLinkedAccountsCount(1);
+          }
+        }
       } catch (err) {
         console.error("Failed to fetch total due:", err);
         setTotalDue(0);
@@ -62,8 +76,13 @@ export default function PayDueSheet({
 
       const paid = res.data.paid_amount.toFixed(2);
       const remain = res.data.total_due_now.toFixed(2);
+      const settledAccounts = res.data.settled_accounts || 1;
 
       let message = `💰 Payment successful!\nPaid: ₹${paid}\nRemaining Due: ₹${remain}`;
+      
+      if (linkedAccountsCount > 1) {
+        message += `\n\n✅ Settled across ${settledAccounts} linked account${settledAccounts > 1 ? 's' : ''}`;
+      }
       
       if (res.data.advance_payment_message) {
         message += `\n\n${res.data.advance_payment_message}`;
@@ -120,7 +139,12 @@ export default function PayDueSheet({
                 <strong>Total Due:</strong>{" "}
                 {totalDue !== null ? `₹${totalDue.toFixed(2)}` : "Calculating..."}
               </p>
-              <p className="text-xs text-gray-500">
+              {linkedAccountsCount > 1 && (
+                <p className="text-xs text-blue-600 font-medium mt-1">
+                  Combined from {linkedAccountsCount} linked accounts
+                </p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
                 (All unpaid sales will be adjusted oldest first)
               </p>
             </div>

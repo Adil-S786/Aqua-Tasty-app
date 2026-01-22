@@ -4,6 +4,10 @@ export const Endpoints = {
   customerById: (id: number) => `/customers/${id}`,
   checkCustomerName: "/customers/check-name",
   convertWalkin: "/customers/convert-walkin",
+  linkCustomer: (customerId: number, parentId: number) => `/customers/${customerId}/link?parent_id=${parentId}`,
+  unlinkCustomer: (customerId: number) => `/customers/${customerId}/unlink`,
+  linkedAccounts: (customerId: number) => `/customers/${customerId}/linked-accounts`,
+  combinedBill: (customerId: number) => `/customers/${customerId}/combined-bill`,
 
   // Sales
   sales: "/sales",
@@ -20,6 +24,7 @@ export const Endpoints = {
   // Jar Tracking
   jarTracking: "/jartracking",
   jarReturn: "/jartracking/return",
+  totalJars: "/jartracking/total-jars",
 
   // Payments
   payments: "/payments",

@@ -37,6 +37,8 @@ export default function QuickSaleForm({
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [focused, setFocused] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [previousDue, setPreviousDue] = useState(0); // ⭐ NEW: Fetch from API
+  const [jarDue, setJarDue] = useState(0); // ⭐ NEW: Fetch from API
 
   // ---------------- PREFILL (EDIT / SELL AGAIN) ----------------
   useEffect(() => {
@@ -70,31 +72,63 @@ export default function QuickSaleForm({
 
   const paidAmount = Number(form.amount_paid || 0);
 
-  const jarDue = useMemo(() => {
-    if (isProfiled && !form.customer_id) return 0;
-    if (!isProfiled && !form.customer_name) return 0;
+  // ⭐ NEW: Fetch jar due from API (includes linked accounts)
+  useEffect(() => {
+    const fetchJarDue = async () => {
+      if (isProfiled && !form.customer_id) {
+        setJarDue(0);
+        return;
+      }
+      if (!isProfiled && !form.customer_name) {
+        setJarDue(0);
+        return;
+      }
 
-    return sales
-      .filter((s) =>
-        isProfiled
-          ? s.customer_id === form.customer_id
-          : s.customer_name === form.customer_name
-      )
-      .reduce((sum, s) => sum + (s.our_jars || 0), 0);
-  }, [sales, isProfiled, form.customer_id, form.customer_name]);
+      try {
+        const payload = {
+          customer_id: isProfiled ? form.customer_id : null,
+          customer_name: !isProfiled ? form.customer_name : null,
+        };
+        const res = await api.post(Endpoints.totalJars, payload);
+        setJarDue(res.data.total_jars || 0);
+      } catch (err) {
+        console.error("Failed to fetch jar due:", err);
+        setJarDue(0);
+      }
+    };
 
-  const previousDue = useMemo(() => {
-    if (isProfiled && !form.customer_id) return 0;
-    if (!isProfiled && !form.customer_name) return 0;
+    fetchJarDue();
+  }, [isProfiled, form.customer_id, form.customer_name]);
 
-    return sales
-      .filter((s) =>
-        isProfiled
-          ? s.customer_id === form.customer_id
-          : s.customer_name === form.customer_name
-      )
-      .reduce((sum, s) => sum + (s.due_amount || 0), 0);
-  }, [sales, isProfiled, form.customer_id, form.customer_name]);
+  // ⭐ NEW: Fetch previous due from API (includes linked accounts)
+  useEffect(() => {
+    const fetchPreviousDue = async () => {
+      if (isProfiled && !form.customer_id) {
+        setPreviousDue(0);
+        return;
+      }
+      if (!isProfiled && !form.customer_name) {
+        setPreviousDue(0);
+        return;
+      }
+
+      try {
+        const payload = {
+          customer_id: isProfiled ? form.customer_id : null,
+          customer_name: !isProfiled ? form.customer_name : null,
+        };
+        console.log("Fetching total due with payload:", payload);
+        const res = await api.post(Endpoints.totalDue, payload);
+        console.log("Total due response:", res.data);
+        setPreviousDue(res.data.total_due || 0);
+      } catch (err) {
+        console.error("Failed to fetch previous due:", err);
+        setPreviousDue(0);
+      }
+    };
+
+    fetchPreviousDue();
+  }, [isProfiled, form.customer_id, form.customer_name]);
 
   // Get customer's advance payment
   const advancePayment = useMemo(() => {

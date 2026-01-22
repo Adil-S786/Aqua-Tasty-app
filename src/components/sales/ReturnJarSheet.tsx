@@ -20,25 +20,32 @@ export default function ReturnJarSheet({
   const [currentDue, setCurrentDue] = useState(0);
   const [returnCount, setReturnCount] = useState("");
   const [loading, setLoading] = useState(false);
+  const [linkedAccountsCount, setLinkedAccountsCount] = useState<number>(1);
 
-  // Fetch live due jars for this customer
+  // Fetch live due jars for this customer (combined for linked accounts)
   useEffect(() => {
     const fetchDue = async () => {
       if (!sale || !isOpen) return;
       try {
-        const res = await api.get(Endpoints.jarTracking);
-        const list = res.data;
-
-        let entry;
+        // Use /total-jars endpoint for combined jar due
+        const payload = {
+          customer_id: sale.customer_id || null,
+          customer_name: sale.customer_name || null,
+        };
+        const res = await api.post(Endpoints.totalJars, payload);
+        setCurrentDue(res.data.total_jars || 0);
+        
+        // Fetch linked accounts info if profiled customer
         if (sale.customer_id) {
-          entry = list.find((j: any) => j.customer_id === sale.customer_id);
-        } else {
-          entry = list.find((j: any) => j.customer_name === sale.customer_name);
+          try {
+            const linkedRes = await api.get(Endpoints.linkedAccounts(sale.customer_id));
+            setLinkedAccountsCount(linkedRes.data.total_accounts || 1);
+          } catch (err) {
+            setLinkedAccountsCount(1);
+          }
         }
-
-        setCurrentDue(entry?.current_due_jars || 0);
       } catch (err) {
-        console.error("Error fetching jar tracking:", err);
+        console.error("Error fetching jar due:", err);
         setCurrentDue(0);
       }
     };
@@ -71,8 +78,17 @@ export default function ReturnJarSheet({
       if (typeof remaining_due === "number") {
         setCurrentDue(remaining_due);
       } else {
-        // fallback: re-fetch jartracking entries after refreshData
-        // (the refreshData below will update the parent's state)
+        // Re-fetch combined jar due after return
+        try {
+          const payload = {
+            customer_id: sale.customer_id || null,
+            customer_name: sale.customer_name || null,
+          };
+          const r = await api.post(Endpoints.totalJars, payload);
+          setCurrentDue(r.data.total_jars || 0);
+        } catch (e) {
+          console.error("fallback jar due fetch failed", e);
+        }
       }
 
       toast.success(
@@ -84,21 +100,6 @@ export default function ReturnJarSheet({
       // refresh parent data (must await so UI uses fresh values)
       if (refreshData) {
         await refreshData();
-      } else {
-        // as fallback, re-fetch local jartracking
-        try {
-          const r = await api.get(Endpoints.jarTracking);
-          const list = r.data;
-          let entry;
-          if (sale.customer_id) {
-            entry = list.find((j: any) => j.customer_id === sale.customer_id);
-          } else {
-            entry = list.find((j: any) => j.customer_name === sale.customer_name);
-          }
-          setCurrentDue(entry?.current_due_jars || 0);
-        } catch (e) {
-          console.error("fallback jartracking fetch failed", e);
-        }
       }
 
       // small delay to let UI show toast and refreshed values
@@ -115,19 +116,36 @@ export default function ReturnJarSheet({
 
   if (!isOpen) return null;
 
+  // Determine customer display name and type
+  const displayName = sale.customer_id 
+    ? (sale.profile_name || sale.customer_name || "Profiled Customer")
+    : (sale.customer_name || "Walk-in");
+  
+  const customerType = sale.customer_id ? "Profiled" : "Walk-in";
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end justify-center p-4 z-50">
       <div className="bg-white rounded-2xl w-full p-4 shadow-xl">
         <h2 className="text-lg font-semibold text-ocean text-center">Return Jars</h2>
 
         <p className="text-center text-sm text-gray-600 mt-1">
-          Customer: <b>{sale?.customer_name ?? sale?.profile_name ?? "Walk-in"}</b>
+          Customer: <b>{displayName}</b> ({customerType})
         </p>
 
         {/* LIVE Jar Due */}
-        <p className="text-center text-lg font-bold text-blue-700 mt-2">
-          Current Jar Due: {currentDue}
-        </p>
+        <div className="bg-gray-50 rounded-xl p-3 mt-3 text-center">
+          <p className="text-lg font-bold text-blue-700">
+            Current Jar Due: {currentDue}
+          </p>
+          {linkedAccountsCount > 1 && (
+            <p className="text-xs text-blue-600 font-medium mt-1">
+              Combined from {linkedAccountsCount} linked accounts
+            </p>
+          )}
+          <p className="text-xs text-gray-500 mt-1">
+            (Jars will be returned oldest first)
+          </p>
+        </div>
 
         <input
           className="input mt-3"

@@ -130,7 +130,7 @@ export default function CustomersPage() {
                 (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
             )[0];
 
-            const total_due = custSales.reduce((sum, s) => sum + (s.due_amount || 0), 0);
+            const total_due = c.total_due !== undefined ? c.total_due : custSales.reduce((sum, s) => sum + (s.due_amount || 0), 0);
             byId[c.id] = {
                 id: c.id,
                 name: c.name,
@@ -614,6 +614,7 @@ export default function CustomersPage() {
                     }}
                     customer={{ ...selectedCustomer }}
                     refreshAll={refreshAll}
+                    allCustomers={customers}
 
                     // ⭐ NEW FIX — pass updated data back
                     onUpdateCustomerFromPopup={(updated) => {

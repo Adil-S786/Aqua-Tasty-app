@@ -1,11 +1,13 @@
 "use client";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState, useRef } from "react";
-import { X, Printer, DollarSign, Edit, Trash2 } from "lucide-react";
+import { X, Printer, DollarSign, Edit, Trash2, Link as LinkIcon, Unlink } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
 import { Endpoints } from "@/config/endpoints";
 import EditProfilePopup from "./EditProfilePopup";
+import LinkAccountSheet from "./LinkAccountSheet";
+import CombinedBillPopup from "./CombinedBillPopup";
 
 export default function ProfilePopup({
   isOpen,
@@ -14,6 +16,7 @@ export default function ProfilePopup({
   refreshAll,
   onPayDueClick,
   onUpdateCustomerFromPopup,
+  allCustomers = [], // ⭐ NEW: Pass all customers for linking
 
   // ⭐ Walk-in / read-only mode
   disableEdit = false,
@@ -24,6 +27,7 @@ export default function ProfilePopup({
   refreshAll: () => Promise<void>;
   onPayDueClick?: (customer: any) => void;
   onUpdateCustomerFromPopup: (updated: any) => void;
+  allCustomers?: any[]; // ⭐ NEW
   disableEdit?: boolean;
 }) {
   const [sales, setSales] = useState<any[]>([]);
@@ -35,6 +39,12 @@ export default function ProfilePopup({
   const printRef = useRef<HTMLDivElement>(null);
   const [localCustomer, setLocalCustomer] = useState(customer);
   const [billFilter, setBillFilter] = useState<"all" | "dues" | "dues+3">("dues"); // New filter state
+  
+  // ⭐ NEW: Linked accounts state
+  const [linkedAccounts, setLinkedAccounts] = useState<any>(null);
+  const [linkSheetOpen, setLinkSheetOpen] = useState(false);
+  const [combinedBillOpen, setCombinedBillOpen] = useState(false);
+  const [showCombined, setShowCombined] = useState(true); // ⭐ NEW: Toggle for combined view (default ON)
 
   useEffect(() => {
     setLocalCustomer(customer);
@@ -64,40 +74,95 @@ export default function ProfilePopup({
     if (!customer?.id) return; // protect walk-in
 
     try {
-      const [salesRes, jarRes, payRes] = await Promise.all([
-        api.get(`${Endpoints.sales}/history/${customer.id}`),
-        api.get(`${Endpoints.jarTracking}?customer_id=${customer.id}`),
-        api.get(`${Endpoints.payments}?customer_id=${customer.id}`),
+      // ⭐ NEW: Determine which accounts to fetch
+      let accountIds = [customer.id];
+      
+      if (showCombined && linkedAccounts && linkedAccounts.total_accounts > 1) {
+        // Get all linked account IDs
+        accountIds = [
+          linkedAccounts.parent.id,
+          ...linkedAccounts.children.map((c: any) => c.id)
+        ];
+      }
+
+      // Fetch data for all accounts
+      const salesPromises = accountIds.map(id => 
+        api.get(`${Endpoints.sales}/history/${id}`).catch(() => ({ data: [] }))
+      );
+      
+      // ⭐ Fetch jar tracking based on combined view setting
+      let jarPromises;
+      if (showCombined && accountIds.length > 1) {
+        // Combined view: fetch for all linked accounts
+        jarPromises = accountIds.map(id => 
+          api.get(`${Endpoints.jarTracking}?customer_id=${id}`).catch(() => ({ data: [] }))
+        );
+      } else {
+        // Individual view: fetch only for current customer
+        jarPromises = [api.get(`${Endpoints.jarTracking}?customer_id=${customer.id}`).catch(() => ({ data: [] }))];
+      }
+      
+      const payPromises = accountIds.map(id => 
+        api.get(`${Endpoints.payments}?customer_id=${id}`).catch(() => ({ data: [] }))
+      );
+
+      const [salesResults, jarResults, payResults] = await Promise.all([
+        Promise.all(salesPromises),
+        Promise.all(jarPromises),
+        Promise.all(payPromises)
       ]);
 
-      // Store all sales
-      const salesData = salesRes.data || [];
-      const paymentsData = payRes.data || [];
+      // Combine all sales from all accounts
+      const allSalesData = salesResults.flatMap(res => res.data || []);
+      const allPaymentsData = payResults.flatMap(res => res.data || []);
       
-      // Create payment-only records (payments not associated with sales on same date)
-      const paymentOnlyRecords = paymentsData.map((payment: any) => ({
+      // Create payment-only records
+      const paymentOnlyRecords = allPaymentsData.map((payment: any) => ({
         id: `payment-${payment.id}`,
         date: payment.date,
         total_jars: 0,
         total_cost: 0,
         amount_paid: payment.amount_paid,
         due_amount: 0,
-        isPaymentOnly: true, // Flag to identify payment-only records
+        isPaymentOnly: true,
+        customer_id: payment.customer_id, // ⭐ Keep track of which account
       }));
       
+      // Add customer_name to sales for combined view
+      const salesWithNames = allSalesData.map((sale: any) => {
+        if (showCombined && linkedAccounts) {
+          const account = [linkedAccounts.parent, ...linkedAccounts.children]
+            .find((acc: any) => acc.id === sale.customer_id);
+          return {
+            ...sale,
+            account_name: account?.name || ''
+          };
+        }
+        return sale;
+      });
+      
       // Merge sales and payment-only records
-      const allRecords = [...salesData, ...paymentOnlyRecords];
+      const allRecords = [...salesWithNames, ...paymentOnlyRecords];
       setAllSales(allRecords);
 
       // Apply initial filter
       applyBillFilter(allRecords, billFilter);
 
-      const jarTrackRow = jarRes.data.find((jt: any) => jt.customer_id === customer.id);
-      setJarDue(jarTrackRow ? jarTrackRow.current_due_jars : 0);
+      // Calculate jar due based on combined view setting
+      let totalJarDue = 0;
+      for (const jarRes of jarResults) {
+        const jarData = jarRes.data || [];
+        for (const jt of jarData) {
+          totalJarDue += jt.current_due_jars || 0;
+        }
+      }
+      setJarDue(totalJarDue);
 
-      const custPayments = paymentsData.filter((p: any) => p.customer_id === customer.id);
-      if (custPayments.length > 0) {
-        const latest = custPayments.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+      // Get latest payment from all accounts
+      if (allPaymentsData.length > 0) {
+        const latest = allPaymentsData.sort((a: any, b: any) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        )[0];
         setLastPayment(latest);
       } else {
         setLastPayment(null);
@@ -139,20 +204,63 @@ export default function ProfilePopup({
     }
   }, [billFilter]);
 
-  // -------------------------------------------------------------
-  // Decide which fetch to run
-  // -------------------------------------------------------------
+  // ⭐ NEW: Refetch when combined toggle changes
+  useEffect(() => {
+    if (isOpen && !disableEdit && customer?.id) {
+      fetchProfileData();
+    }
+  }, [showCombined]);
+
+  // Separate effect for initial load and linkedAccounts changes
   useEffect(() => {
     if (!isOpen) return;
 
     if (disableEdit) {
-      // ⭐ WALK-IN MODE
       fetchWalkinBill();
     } else {
-      // ⭐ PROFILE MODE
       fetchProfileData();
+      fetchLinkedAccounts();
     }
   }, [isOpen, disableEdit]);
+
+  // ⭐ NEW: Fetch linked accounts
+  const fetchLinkedAccounts = async () => {
+    if (!customer?.id) return;
+
+    try {
+      const res = await api.get(Endpoints.linkedAccounts(customer.id));
+      setLinkedAccounts(res.data);
+      
+      // If we have linked accounts and combined view is on, refetch profile data
+      if (res.data && res.data.total_accounts > 1 && showCombined) {
+        await fetchProfileData();
+      }
+    } catch (err) {
+      console.error("Failed to fetch linked accounts:", err);
+    }
+  };
+
+  // ⭐ NEW: Handle unlink
+  const handleUnlink = async () => {
+    if (!customer?.id) return;
+
+    if (!confirm(`Unlink ${customer.name} from its parent account?`)) return;
+
+    try {
+      await api.post(Endpoints.unlinkCustomer(customer.id));
+      toast.success("Account unlinked successfully!");
+      
+      // Update local customer state to remove parent_customer_id
+      const updatedCustomer = { ...localCustomer, parent_customer_id: null };
+      setLocalCustomer(updatedCustomer);
+      onUpdateCustomerFromPopup(updatedCustomer);
+      
+      await fetchLinkedAccounts(); // Refresh linked accounts state (will also refetch profile data)
+      await refreshAll(); // Refresh customer list
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to unlink account");
+    }
+  };
 
   // -------------------------------------------------------------
   // Generate PDF Element (shared by Print & WhatsApp)
@@ -367,6 +475,33 @@ export default function ProfilePopup({
                   Pay Due
                 </button>
 
+                {/* ⭐ NEW: Linked Accounts Buttons (only for profiled customers) */}
+                {!disableEdit && (
+                  <>
+                    {/* Link Account - Show only if customer has no parent */}
+                    {!localCustomer.parent_customer_id && (
+                      <button
+                        onClick={() => setLinkSheetOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm transition-colors"
+                      >
+                        <LinkIcon size={16} />
+                        Link
+                      </button>
+                    )}
+
+                    {/* Unlink Account - Show only if customer has parent */}
+                    {localCustomer.parent_customer_id && (
+                      <button
+                        onClick={handleUnlink}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-sm transition-colors"
+                      >
+                        <Unlink size={16} />
+                        Unlink
+                      </button>
+                    )}
+                  </>
+                )}
+
                 {/* Edit & Delete (only for profiled customers) */}
                 {!disableEdit && (
                   <>
@@ -424,26 +559,46 @@ export default function ProfilePopup({
 
               {/* Bills */}
               <div className="bg-white dark:bg-[#0C3C40] rounded-2xl shadow p-4">
-                <div className="flex justify-between items-center mb-3">
+                <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
                   <h3 className="text-lg font-medium text-[#045b68] dark:text-[#B4F2EE]">
                     Outstanding Bills
                   </h3>
 
-                  {/* Filter Dropdown */}
-                  <select
-                    value={billFilter}
-                    onChange={(e) => setBillFilter(e.target.value as "all" | "dues" | "dues+3")}
-                    className="px-3 py-1 text-sm border rounded-lg bg-white dark:bg-[#062E33] dark:text-white"
-                  >
-                    <option value="dues">Only Dues</option>
-                    <option value="dues+3">Dues + 3 Entries</option>
-                    <option value="all">All Time</option>
-                  </select>
+                  <div className="flex items-center gap-3">
+                    {/* ⭐ NEW: Combined Toggle (only show if has linked accounts) */}
+                    {linkedAccounts && linkedAccounts.total_accounts > 1 && (
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showCombined}
+                          onChange={(e) => setShowCombined(e.target.checked)}
+                          className="w-4 h-4 cursor-pointer"
+                        />
+                        <span className="text-gray-700 dark:text-gray-300">
+                          Combined ({linkedAccounts.total_accounts} accounts)
+                        </span>
+                      </label>
+                    )}
+
+                    {/* Filter Dropdown */}
+                    <select
+                      value={billFilter}
+                      onChange={(e) => setBillFilter(e.target.value as "all" | "dues" | "dues+3")}
+                      className="px-3 py-1 text-sm border rounded-lg bg-white dark:bg-[#062E33] dark:text-white"
+                    >
+                      <option value="dues">Only Dues</option>
+                      <option value="dues+3">Dues + 3 Entries</option>
+                      <option value="all">All Time</option>
+                    </select>
+                  </div>
                 </div>
 
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr>
+                      {showCombined && linkedAccounts && linkedAccounts.total_accounts > 1 && (
+                        <th className="text-left p-2">Account</th>
+                      )}
                       <th className="text-left p-2">Date</th>
                       <th className="text-center p-2">Jars</th>
                       <th className="text-center p-2">Total</th>
@@ -455,6 +610,11 @@ export default function ProfilePopup({
                   <tbody>
                     {sales.map((s) => (
                       <tr key={s.id} className="border-b border-gray-200 dark:border-gray-700">
+                        {showCombined && linkedAccounts && linkedAccounts.total_accounts > 1 && (
+                          <td className="p-2 text-xs text-gray-600 dark:text-gray-400">
+                            {s.account_name || '—'}
+                          </td>
+                        )}
                         <td className="p-2">
                           {new Date(s.date).toLocaleDateString("en-IN", {
                             day: "2-digit",
@@ -479,7 +639,7 @@ export default function ProfilePopup({
 
                     {sales.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="text-center p-4 text-gray-500 dark:text-gray-300">
+                        <td colSpan={showCombined && linkedAccounts && linkedAccounts.total_accounts > 1 ? 6 : 5} className="text-center p-4 text-gray-500 dark:text-gray-300">
                           No bills to display 🎉
                         </td>
                       </tr>
@@ -489,6 +649,9 @@ export default function ProfilePopup({
                   {sales.length > 0 && (
                     <tfoot>
                       <tr className="font-semibold border-t border-gray-300 dark:border-gray-700">
+                        {showCombined && linkedAccounts && linkedAccounts.total_accounts > 1 && (
+                          <td className="p-2"></td>
+                        )}
                         <td className="p-2">Total</td>
                         <td className="text-center p-2 text-blue-700">
                           {sales.reduce((sum: number, s: any) => sum + (s.total_jars || 0), 0)}
@@ -540,6 +703,29 @@ export default function ProfilePopup({
                 setEditOpen(false);
                 await refreshAll();
               }}
+            />
+          )}
+
+          {/* ⭐ NEW: Link Account Sheet */}
+          {!disableEdit && (
+            <LinkAccountSheet
+              isOpen={linkSheetOpen}
+              onClose={() => setLinkSheetOpen(false)}
+              customer={customer}
+              allCustomers={allCustomers}
+              onLinked={() => {
+                fetchLinkedAccounts();
+                refreshAll();
+              }}
+            />
+          )}
+
+          {/* ⭐ NEW: Combined Bill Popup */}
+          {!disableEdit && (
+            <CombinedBillPopup
+              isOpen={combinedBillOpen}
+              onClose={() => setCombinedBillOpen(false)}
+              customerId={customer?.id}
             />
           )}
         </>
