@@ -123,18 +123,18 @@ export default function RemindersPage() {
     };
 
     // ----------------------
-    // AUTO-ADVANCE OVERDUE
+    // ADVANCE OVERDUE
     // ----------------------
     const handleAutoAdvance = async () => {
-        if (!confirm("Auto-advance overdue reminders to their next occurrence?\n\nThis will move all overdue reminders forward by their frequency.")) return;
+        if (!confirm("Advance all overdue reminders to today?\n\nThis will move all yesterday's and older reminders to today.")) return;
 
         try {
-            const res = await api.post(Endpoints.autoAdvanceOverdue);
-            toast.success(`Advanced ${res.data.advanced} overdue reminders`);
+            const res = await api.post(Endpoints.advanceOverdueReminders);
+            toast.success(res.data.message || `Advanced ${res.data.advanced} overdue reminders`);
             await fetchReminders();
             await fetchOverdueReminders();
         } catch (err: any) {
-            toast.error(err?.response?.data?.detail || "Failed to auto-advance reminders");
+            toast.error(err?.response?.data?.detail || "Failed to advance reminders");
         }
     };
 

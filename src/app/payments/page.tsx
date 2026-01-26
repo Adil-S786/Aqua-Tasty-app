@@ -1,10 +1,14 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import api from "@/lib/api";
 import { Endpoints } from "@/config/endpoints";
 import TopNav from "@/components/TopNav";
 import DrawerMenu from "@/components/DrawerMenu";
 import toast from "react-hot-toast";
+import { Calendar } from "lucide-react";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import OldPayDueSheet from "@/components/payments/OldPayDueSheet";
 
 type Payment = {
   id: number;
@@ -22,15 +26,39 @@ export default function PaymentHistoryPage() {
   const [filter, setFilter] = useState("today");
   const [sortBy, setSortBy] = useState("newest");
 
-  const [deletingId, setDeletingId] = useState<number | null>(null); // ✅ NEW
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  
+  // ⭐ NEW: Calendar state
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  const calendarRef = useRef<HTMLDivElement | null>(null);
+  
+  // ⭐ NEW: Old Pay Due sheet
+  const [oldPayDueOpen, setOldPayDueOpen] = useState(false);
+  const [customers, setCustomers] = useState<any[]>([]);
 
   const fetchPayments = async () => {
     const res = await api.get(Endpoints.payments);
     setPayments(res.data || []);
   };
 
+  const fetchCustomers = async () => {
+    const res = await api.get(Endpoints.customers);
+    setCustomers(res.data || []);
+  };
+
   useEffect(() => {
     fetchPayments();
+    fetchCustomers();
+    
+    // ⭐ NEW: Close calendar on outside click
+    const onDocClick = (e: MouseEvent) => {
+      if (!calendarRef.current) return;
+      if (!(e.target instanceof Node)) return;
+      if (!calendarRef.current.contains(e.target)) setCalendarOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
   // ---------------- DATE FILTERS ----------------
@@ -44,20 +72,44 @@ export default function PaymentHistoryPage() {
   const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
+  const calendarIsActive = Boolean(dateRange[0]);
+
+  const isDateInSelection = (d: Date) => {
+    if (!dateRange[0]) return true;
+    const start = new Date(dateRange[0]);
+    start.setHours(0, 0, 0, 0);
+    
+    if (!dateRange[1]) {
+      const end = new Date(start);
+      end.setHours(23, 59, 59, 999);
+      return d >= start && d <= end;
+    }
+    
+    const end = new Date(dateRange[1]);
+    end.setHours(23, 59, 59, 999);
+    return d >= start && d <= end;
+  };
+
   const filteredPayments = useMemo(() => {
     let filtered = payments.filter((p) =>
       p.customer_name?.toLowerCase().includes(search.toLowerCase())
     );
 
-    filtered = filtered.filter((p) => {
-      const d = new Date(p.date);
-      if (filter === "today") return d >= startOfToday;
-      if (filter === "yesterday") return d >= startOfYesterday && d < startOfToday;
-      if (filter === "week") return d >= startOfWeek;
-      if (filter === "month") return d >= startOfMonth;
-      if (filter === "last-month") return d >= startOfLastMonth && d <= endOfLastMonth;
-      return true;
-    });
+    // If NO calendar selection → use quick filters
+    if (!calendarIsActive) {
+      filtered = filtered.filter((p) => {
+        const d = new Date(p.date);
+        if (filter === "today") return d >= startOfToday;
+        if (filter === "yesterday") return d >= startOfYesterday && d < startOfToday;
+        if (filter === "week") return d >= startOfWeek;
+        if (filter === "month") return d >= startOfMonth;
+        if (filter === "last-month") return d >= startOfLastMonth && d <= endOfLastMonth;
+        return true;
+      });
+    } else {
+      // Apply calendar selection
+      filtered = filtered.filter((p) => isDateInSelection(new Date(p.date)));
+    }
 
     if (sortBy === "newest")
       filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -69,7 +121,7 @@ export default function PaymentHistoryPage() {
       filtered.sort((a, b) => a.amount_paid - b.amount_paid);
 
     return filtered;
-  }, [payments, search, filter, sortBy]);
+  }, [payments, search, filter, sortBy, dateRange, calendarIsActive]);
 
   const filterLabel = {
     today: "Today",
@@ -79,6 +131,12 @@ export default function PaymentHistoryPage() {
     "last-month": "Last Month",
     all: "All Time",
   }[filter];
+
+  // ⭐ NEW: Clear calendar
+  const clearCalendar = () => {
+    setDateRange([null, null]);
+    setCalendarOpen(false);
+  };
 
   // ---------------- DELETE PAYMENT ----------------
   const deletePayment = async (id: number) => {
@@ -104,51 +162,104 @@ export default function PaymentHistoryPage() {
 
       <div className="p-4 space-y-4">
         <h1 className="text-xl font-semibold text-[#045b68]">
-          Payment History — {filterLabel}
+          Payment History — {calendarIsActive ? "Custom Range" : filterLabel}
         </h1>
 
-        {/* Search & Filters */}
-        <div className="relative">
-          <input
-            className="input"
-            placeholder="Search customer..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-          />
-          
-          {/* Suggestions Dropdown */}
-          {showSuggestions && search && (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto">
-              {Array.from(new Set(payments.map(p => p.customer_name)))
-                .filter((name) => name?.toLowerCase().includes(search.toLowerCase()))
-                .slice(0, 10)
-                .map((name) => (
+        {/* ⭐ NEW: Calendar Icon */}
+        <div className="flex gap-2 items-center">
+          <div className="relative flex-1">
+            <input
+              className="input w-full"
+              placeholder="Search customer..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            />
+            
+            {/* Suggestions Dropdown */}
+            {showSuggestions && search && (
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto">
+                {Array.from(new Set(payments.map(p => p.customer_name)))
+                  .filter((name) => name?.toLowerCase().includes(search.toLowerCase()))
+                  .slice(0, 10)
+                  .map((name) => (
+                    <button
+                      key={name}
+                      className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() => {
+                        setSearch(name);
+                        setShowSuggestions(false);
+                      }}
+                    >
+                      <span className="font-medium">{name}</span>
+                    </button>
+                  ))}
+                {Array.from(new Set(payments.map(p => p.customer_name)))
+                  .filter((name) => name?.toLowerCase().includes(search.toLowerCase()))
+                  .length === 0 && (
+                  <div className="px-4 py-2 text-gray-500 text-sm">No matches found</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Calendar Button */}
+          <div className="relative" ref={calendarRef}>
+            <button
+              className="p-2 rounded-md hover:bg-gray-200 border border-gray-300"
+              onClick={() => setCalendarOpen((s) => !s)}
+            >
+              <Calendar size={20} />
+            </button>
+
+            {calendarOpen && (
+              <div className="absolute right-0 mt-2 bg-white shadow-xl rounded-lg z-50 p-3 border border-gray-300">
+                <div className="scale-[0.85] origin-top mx-auto">
+                  <DatePicker
+                    selected={dateRange[0]}
+                    onChange={(dates: any) => setDateRange(dates)}
+                    startDate={dateRange[0]}
+                    endDate={dateRange[1]}
+                    selectsRange
+                    inline
+                    monthsShown={1}
+                  />
+                </div>
+                <div className="flex gap-2 mt-2">
                   <button
-                    key={name}
-                    className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
-                    onClick={() => {
-                      setSearch(name);
-                      setShowSuggestions(false);
-                    }}
+                    className="text-red-600 text-sm"
+                    onClick={clearCalendar}
                   >
-                    <span className="font-medium">{name}</span>
+                    Clear
                   </button>
-                ))}
-              {Array.from(new Set(payments.map(p => p.customer_name)))
-                .filter((name) => name?.toLowerCase().includes(search.toLowerCase()))
-                .length === 0 && (
-                <div className="px-4 py-2 text-gray-500 text-sm">No matches found</div>
-              )}
-            </div>
-          )}
+                  <button
+                    className="btn bg-gray-200 px-3 py-1 text-sm ml-auto"
+                    onClick={() => setCalendarOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Show calendar selection if active */}
+        {calendarIsActive && (
+          <div className="text-sm font-medium text-gray-700 bg-blue-50 p-2 rounded-lg">
+            📅 {dateRange[0] && dateRange[0].toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+            {dateRange[1] && ` - ${dateRange[1].toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <select
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setDateRange([null, null]); // Clear calendar when using quick filters
+            }}
             className="input"
           >
             <option value="today">Today</option>
@@ -242,6 +353,22 @@ export default function PaymentHistoryPage() {
             </tbody>
           </table>
         </div>
+
+        {/* ⭐ NEW: Old Pay Due Button */}
+        <button
+          className="fixed bottom-5 right-5 btn bg-yellow-600 text-white shadow-lg hover:bg-yellow-700 px-4 py-3 rounded-full font-semibold"
+          onClick={() => setOldPayDueOpen(true)}
+        >
+          📅 Old Pay Due
+        </button>
+
+        {/* ⭐ NEW: Old Pay Due Sheet */}
+        <OldPayDueSheet
+          isOpen={oldPayDueOpen}
+          onClose={() => setOldPayDueOpen(false)}
+          onSaved={fetchPayments}
+          customers={customers}
+        />
       </div>
     </main>
   );

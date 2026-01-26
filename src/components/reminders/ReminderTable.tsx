@@ -54,6 +54,7 @@ export default function ReminderTable({
     const [statusFilter, setStatusFilter] = useState("all");
     const [search, setSearch] = useState("");
     const [showSuggestions, setShowSuggestions] = useState(false);
+    const [notePopup, setNotePopup] = useState<{ id: number; note: string } | null>(null);
 
     // compute date boundaries
     const now = new Date();
@@ -234,14 +235,23 @@ export default function ReminderTable({
                                     onClick={() => onRowClick(r)}
                                 >
                                     <td className="p-3 w-[25%]">
-                                        <div className="font-medium text-gray-900 dark:text-white">
-                                            {r.customer_name || r.custom_name}
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-medium text-gray-900 dark:text-white">
+                                                {r.customer_name || r.custom_name}
+                                            </span>
+                                            {r.note && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setNotePopup({ id: r.id, note: r.note || "" });
+                                                    }}
+                                                    className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm"
+                                                    title="View note"
+                                                >
+                                                    ℹ️
+                                                </button>
+                                            )}
                                         </div>
-                                        {r.note && (
-                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                                                {r.note}
-                                            </div>
-                                        )}
                                     </td>
 
                                     <td className="p-3 w-[12%] capitalize text-gray-700 dark:text-gray-300">
@@ -297,6 +307,42 @@ export default function ReminderTable({
                     </tbody>
                 </table>
             </div>
+
+            {/* Note Popup */}
+            {notePopup && (
+                <div 
+                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                    onClick={() => setNotePopup(null)}
+                >
+                    <div 
+                        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                                Reminder Note
+                            </h3>
+                            <button
+                                onClick={() => setNotePopup(null)}
+                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                            {notePopup.note}
+                        </p>
+                        <div className="mt-6 flex justify-end">
+                            <button
+                                onClick={() => setNotePopup(null)}
+                                className="px-4 py-2 bg-ocean text-white rounded-lg hover:bg-ocean/90 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -116,6 +116,16 @@ export default function ProfilePopup({
       const allSalesData = salesResults.flatMap(res => res.data || []);
       const allPaymentsData = payResults.flatMap(res => res.data || []);
       
+      // ⭐ DEBUG: Log raw sales data from API
+      console.log('🔍 Raw Sales Data from API:', allSalesData.map(s => ({
+        id: s.id,
+        customer_id: s.customer_id,
+        date: s.date,
+        total_cost: s.total_cost,
+        amount_paid: s.amount_paid,
+        due_amount: s.due_amount
+      })));
+      
       // Create payment-only records
       const paymentOnlyRecords = allPaymentsData.map((payment: any) => ({
         id: `payment-${payment.id}`,
@@ -135,10 +145,15 @@ export default function ProfilePopup({
             .find((acc: any) => acc.id === sale.customer_id);
           return {
             ...sale,
-            account_name: account?.name || ''
+            account_name: account?.name || '',
+            // ⭐ ENSURE due_amount is preserved (fix for display issue)
+            due_amount: sale.due_amount || 0
           };
         }
-        return sale;
+        return {
+          ...sale,
+          due_amount: sale.due_amount || 0
+        };
       });
       
       // Merge sales and payment-only records
@@ -195,6 +210,15 @@ export default function ProfilePopup({
 
     setSales(filtered);
     setTotalDue(filtered.reduce((sum: number, s: any) => sum + s.due_amount, 0));
+    
+    // ⭐ DEBUG: Log filtered sales to console
+    console.log('🔍 Filtered Sales:', filtered.map(s => ({
+      id: s.id,
+      date: s.date,
+      account_name: s.account_name,
+      due_amount: s.due_amount,
+      isPaymentOnly: s.isPaymentOnly
+    })));
   };
 
   // Handle filter change
@@ -632,7 +656,7 @@ export default function ProfilePopup({
                           ₹{s.amount_paid}
                         </td>
                         <td className="text-center p-2 text-red-600 font-semibold">
-                          {s.isPaymentOnly ? "—" : `₹${s.due_amount}`}
+                          {s.isPaymentOnly ? "—" : `₹${Number(s.due_amount || 0).toFixed(0)}`}
                         </td>
                       </tr>
                     ))}

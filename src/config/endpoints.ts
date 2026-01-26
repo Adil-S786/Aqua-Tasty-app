@@ -29,6 +29,7 @@ export const Endpoints = {
   // Payments
   payments: "/payments",
   paymentById: (id: number) => `/payments/${id}`,
+  createBackdatedPayment: "/payments/create",
 
   // Walk-in Bills
   walkinBill: "/walkin/bill",
@@ -46,9 +47,11 @@ export const Endpoints = {
   remindersDueToday: "/reminders/due/today",
   remindersOverdue: "/reminders/overdue",
   reminderComplete: (id: number) => `/reminders/${id}/complete`,
+  reminderDone: (id: number) => `/reminders/${id}/done`,
   markReminderStatus: (id: number) => `/reminders/${id}/status`,
   advanceReminder: (id: number) => `/reminders/${id}/advance`,
+  moveReminderTomorrow: (id: number) => `/reminders/${id}/move-tomorrow`,
+  advanceOverdueReminders: "/reminders/advance-overdue",
   generateSmartReminders: "/reminders/generate-smart",
-  autoAdvanceOverdue: "/reminders/auto-advance-overdue",
   customerPattern: (id: number) => `/reminders/customer-pattern/${id}`,
 };
