@@ -609,13 +609,18 @@ export default function SalesPage() {
           setSaleSheetOpen(true);
         }}
 
-        onDeleteSale={async (action: "advance" | "settle_dues") => {
+        onDeleteSale={async (action: "advance" | "settle_dues" | "delete_payment" | "keep_payment") => {
           if (!selectedSale) return;
           try {
-            await api.delete(`${Endpoints.saleById(selectedSale.id)}?action=${action}`);
-            const actionMessages = {
-              advance: "Sale deleted. Payment added to advance.",
-              settle_dues: "Sale deleted. Payment used to settle dues."
+            // Map frontend actions to backend actions
+            const backendAction = action === "keep_payment" ? "advance" : action;
+            await api.delete(`${Endpoints.saleById(selectedSale.id)}?action=${backendAction}`);
+            
+            const actionMessages: Record<string, string> = {
+              advance: "Sale deleted. Amount added to advance.",
+              settle_dues: "Sale deleted. Amount used to settle dues.",
+              delete_payment: "Sale and payment deleted.",
+              keep_payment: "Sale deleted. Payment kept (added to advance/settled dues)."
             };
             toast.success(actionMessages[action]);
             setSheetOpen(false);

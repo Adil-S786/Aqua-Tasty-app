@@ -9,6 +9,7 @@ import { Calendar } from "lucide-react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import OldPayDueSheet from "@/components/payments/OldPayDueSheet";
+import { motion, AnimatePresence } from "framer-motion";
 
 type Payment = {
   id: number;
@@ -27,6 +28,16 @@ export default function PaymentHistoryPage() {
   const [sortBy, setSortBy] = useState("newest");
 
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePaymentData, setDeletePaymentData] = useState<{
+    id: number;
+    amount: number;
+    hasLinkedSale: boolean;
+    linkedSaleId: number | null;
+    linkedSaleTotal: number | null;
+  } | null>(null);
   
   // ⭐ NEW: Calendar state
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -157,16 +168,51 @@ export default function PaymentHistoryPage() {
   };
 
   // ---------------- DELETE PAYMENT ----------------
-  const deletePayment = async (id: number) => {
-    if (!confirm("Delete this payment? This action cannot be undone.")) return;
-
+  const handleDeleteClick = async (payment: Payment) => {
     try {
-      setDeletingId(id);
-      await api.delete(Endpoints.paymentById(id)); // ✅ assumes endpoint exists
-      toast.success("Payment deleted!");
+      // Check if payment has linked sale
+      const res = await api.get(`${Endpoints.payments}/${payment.id}/check-linked`);
+      const { has_linked_sale, linked_sale_id, linked_sale_total } = res.data;
+      
+      if (has_linked_sale) {
+        // Show dialog with options
+        setDeletePaymentData({
+          id: payment.id,
+          amount: payment.amount_paid,
+          hasLinkedSale: true,
+          linkedSaleId: linked_sale_id,
+          linkedSaleTotal: linked_sale_total
+        });
+        setDeleteDialogOpen(true);
+      } else {
+        // No linked sale, confirm and delete directly
+        if (!confirm("Delete this payment? Dues will be reopened via LIFO.")) return;
+        await executeDelete(payment.id, "payment_only");
+      }
+    } catch (err) {
+      toast.error("Failed to check payment");
+    }
+  };
+
+  const executeDelete = async (paymentId: number, action: "payment_only" | "delete_sale_also") => {
+    try {
+      setDeletingId(paymentId);
+      
+      if (action === "delete_sale_also" && deletePaymentData?.linkedSaleId) {
+        // Call the sale delete endpoint which handles all rules (advance, settle dues, etc.)
+        await api.delete(`${Endpoints.saleById(deletePaymentData.linkedSaleId)}?action=delete_payment`);
+        toast.success("Sale and payment deleted!");
+      } else {
+        // Delete payment only with LIFO
+        await api.delete(`${Endpoints.paymentById(paymentId)}?action=${action}`);
+        toast.success("Payment deleted, dues reopened!");
+      }
+      
+      setDeleteDialogOpen(false);
+      setDeletePaymentData(null);
       fetchPayments();
     } catch (err) {
-      toast.error("Failed to delete payment");
+      toast.error("Failed to delete");
     } finally {
       setDeletingId(null);
     }
@@ -370,7 +416,7 @@ export default function PaymentHistoryPage() {
                   <td className="p-2 text-center">
                     <button
                       disabled={deletingId === p.id}
-                      onClick={() => deletePayment(p.id)}
+                      onClick={() => handleDeleteClick(p)}
                       className={`text-red-600 hover:text-red-800 font-semibold ${
                         deletingId === p.id
                           ? "opacity-50 cursor-not-allowed"
@@ -409,6 +455,68 @@ export default function PaymentHistoryPage() {
           onSaved={fetchPayments}
           customers={customers}
         />
+
+        {/* Delete Payment Dialog */}
+        <AnimatePresence>
+          {deleteDialogOpen && deletePaymentData && (
+            <>
+              <motion.div
+                className="fixed inset-0 bg-black/40 z-50"
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setDeletePaymentData(null);
+                }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              />
+              <motion.div
+                className="fixed inset-0 flex items-center justify-center z-[60] px-4"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+              >
+                <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm">
+                  <h3 className="text-lg font-semibold text-center text-gray-800 mb-2">
+                    Delete Payment
+                  </h3>
+                  <p className="text-sm text-gray-600 text-center mb-4">
+                    This payment (₹{deletePaymentData.amount}) has a linked sale 
+                    (₹{deletePaymentData.linkedSaleTotal}). What would you like to do?
+                  </p>
+
+                  <div className="space-y-2">
+                    <button
+                      className="btn w-full bg-red-600 text-white"
+                      onClick={() => executeDelete(deletePaymentData.id, "delete_sale_also")}
+                      disabled={deletingId === deletePaymentData.id}
+                    >
+                      🗑️ Delete Sale Also
+                    </button>
+
+                    <button
+                      className="btn w-full bg-yellow-500 text-white"
+                      onClick={() => executeDelete(deletePaymentData.id, "payment_only")}
+                      disabled={deletingId === deletePaymentData.id}
+                    >
+                      💰 Delete Payment Only (LIFO)
+                    </button>
+
+                    <button
+                      className="btn w-full bg-gray-400 text-white mt-2"
+                      onClick={() => {
+                        setDeleteDialogOpen(false);
+                        setDeletePaymentData(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </main>
   );

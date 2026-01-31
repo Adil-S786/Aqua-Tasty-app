@@ -28,7 +28,7 @@ export default function ActionSheet({
   onPayDue: () => void;
   onSellAgain: () => void;
   onEditSale: () => void;
-  onDeleteSale: (action: "advance" | "settle_dues") => void;
+  onDeleteSale: (action: "advance" | "settle_dues" | "delete_payment" | "keep_payment") => void;
   selectedSale?: Sale | null;
   totalCustomerDue?: number;
 }) {
@@ -39,18 +39,25 @@ export default function ActionSheet({
   const hasOtherDues = otherDues > 0;
 
   const handleDeleteClick = () => {
-    // If sale has payment AND there are other dues, show options dialog
-    if (selectedSale && selectedSale.amount_paid > 0 && hasOtherDues) {
+    if (!selectedSale) return;
+
+    // Case 1: Sale has payment → Ask to delete payment or keep it
+    if (selectedSale.amount_paid > 0) {
       setShowDeleteDialog(true);
-    } else {
-      // No payment OR no other dues → just add to advance
+    }
+    // Case 2: Sale has no payment but was fully paid (due = 0, total_cost > 0)
+    // Auto-handle: if other dues exist → settle them, else → add to advance
+    else if (selectedSale.due_amount === 0 && selectedSale.total_cost > 0) {
+      if (hasOtherDues) {
+        onDeleteSale("settle_dues");
+      } else {
+        onDeleteSale("advance");
+      }
+    }
+    // Case 3: Sale with due remaining or zero cost → Just delete
+    else {
       onDeleteSale("advance");
     }
-  };
-
-  const handleDeleteAction = (action: "advance" | "settle_dues") => {
-    setShowDeleteDialog(false);
-    onDeleteSale(action);
   };
 
   return (
@@ -69,7 +76,7 @@ export default function ActionSheet({
             exit={{ opacity: 0 }}
           />
 
-          {/* Delete Options Dialog - Only shown when has payment AND has other dues */}
+          {/* Delete Dialog for PAYMENT */}
           {showDeleteDialog && selectedSale && (
             <motion.div
               className="fixed inset-0 flex items-center justify-center z-[60] px-4"
@@ -82,22 +89,28 @@ export default function ActionSheet({
                   Delete Sale
                 </h3>
                 <p className="text-sm text-gray-600 text-center mb-4">
-                  This sale has ₹{selectedSale.amount_paid} payment. What should happen to it?
+                  This sale has ₹{selectedSale.amount_paid} payment recorded. Delete payment also?
                 </p>
 
                 <div className="space-y-2">
                   <button
-                    className="btn w-full bg-green-600 text-white"
-                    onClick={() => handleDeleteAction("advance")}
+                    className="btn w-full bg-red-600 text-white"
+                    onClick={() => {
+                      setShowDeleteDialog(false);
+                      onDeleteSale("delete_payment");
+                    }}
                   >
-                    💰 Add ₹{selectedSale.amount_paid} to Advance
+                    🗑️ Yes, Delete Payment Also
                   </button>
 
                   <button
-                    className="btn w-full bg-yellow-500 text-white"
-                    onClick={() => handleDeleteAction("settle_dues")}
+                    className="btn w-full bg-green-600 text-white"
+                    onClick={() => {
+                      setShowDeleteDialog(false);
+                      onDeleteSale("keep_payment");
+                    }}
                   >
-                    📋 Settle Other Dues (₹{otherDues} pending)
+                    💰 No, Keep Payment (→ Advance/Settle)
                   </button>
 
                   <button
