@@ -1,5 +1,15 @@
 "use client";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+
+type Sale = {
+  id: number;
+  customer_id: number | null;
+  customer_name: string | null;
+  amount_paid: number;
+  due_amount: number;
+  total_cost: number;
+};
 
 export default function ActionSheet({
   isOpen,
@@ -9,6 +19,8 @@ export default function ActionSheet({
   onSellAgain,
   onEditSale,
   onDeleteSale,
+  selectedSale,
+  totalCustomerDue = 0,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -16,8 +28,31 @@ export default function ActionSheet({
   onPayDue: () => void;
   onSellAgain: () => void;
   onEditSale: () => void;
-  onDeleteSale: () => void;
+  onDeleteSale: (action: "advance" | "settle_dues") => void;
+  selectedSale?: Sale | null;
+  totalCustomerDue?: number;
 }) {
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // Calculate other dues (total due minus this sale's due)
+  const otherDues = totalCustomerDue - (selectedSale?.due_amount || 0);
+  const hasOtherDues = otherDues > 0;
+
+  const handleDeleteClick = () => {
+    // If sale has payment AND there are other dues, show options dialog
+    if (selectedSale && selectedSale.amount_paid > 0 && hasOtherDues) {
+      setShowDeleteDialog(true);
+    } else {
+      // No payment OR no other dues → just add to advance
+      onDeleteSale("advance");
+    }
+  };
+
+  const handleDeleteAction = (action: "advance" | "settle_dues") => {
+    setShowDeleteDialog(false);
+    onDeleteSale(action);
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -25,11 +60,56 @@ export default function ActionSheet({
           {/* backdrop */}
           <motion.div
             className="fixed inset-0 bg-black/30 z-40"
-            onClick={onClose}
+            onClick={() => {
+              setShowDeleteDialog(false);
+              onClose();
+            }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           />
+
+          {/* Delete Options Dialog - Only shown when has payment AND has other dues */}
+          {showDeleteDialog && selectedSale && (
+            <motion.div
+              className="fixed inset-0 flex items-center justify-center z-[60] px-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm">
+                <h3 className="text-lg font-semibold text-center text-gray-800 mb-2">
+                  Delete Sale
+                </h3>
+                <p className="text-sm text-gray-600 text-center mb-4">
+                  This sale has ₹{selectedSale.amount_paid} payment. What should happen to it?
+                </p>
+
+                <div className="space-y-2">
+                  <button
+                    className="btn w-full bg-green-600 text-white"
+                    onClick={() => handleDeleteAction("advance")}
+                  >
+                    💰 Add ₹{selectedSale.amount_paid} to Advance
+                  </button>
+
+                  <button
+                    className="btn w-full bg-yellow-500 text-white"
+                    onClick={() => handleDeleteAction("settle_dues")}
+                  >
+                    📋 Settle Other Dues (₹{otherDues} pending)
+                  </button>
+
+                  <button
+                    className="btn w-full bg-gray-400 text-white mt-2"
+                    onClick={() => setShowDeleteDialog(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           {/* bottom sheet */}
           <motion.div
@@ -53,12 +133,10 @@ export default function ActionSheet({
               <button className="btn w-full bg-blue-600" onClick={onReturnJar}>
                 Return Jar
               </button>
-              {/* NEW BUTTONS */}
               <button className="btn w-full bg-indigo-600" onClick={onEditSale}>
                 ✏️ Edit Sale
               </button>
-
-              <button className="btn w-full bg-red-600" onClick={onDeleteSale}>
+              <button className="btn w-full bg-red-600" onClick={handleDeleteClick}>
                 🗑️ Delete Sale
               </button>
               <button className="btn w-full bg-gray-400" onClick={onClose}>

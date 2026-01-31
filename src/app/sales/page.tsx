@@ -543,6 +543,39 @@ export default function SalesPage() {
       <ActionSheet
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
+        selectedSale={selectedSale}
+        totalCustomerDue={(() => {
+          if (!selectedSale?.customer_id) {
+            // Walk-in customer - just sum their sales
+            return sales
+              .filter((s) => s.customer_name === selectedSale?.customer_name && !s.customer_id)
+              .reduce((sum, s) => sum + s.due_amount, 0);
+          }
+          
+          // Profiled customer - check for linked accounts
+          const customer = customers.find((c) => c.id === selectedSale.customer_id);
+          if (!customer) return 0;
+          
+          // Get all linked account IDs
+          let accountIds: number[] = [];
+          
+          if (customer.parent_customer_id) {
+            // This is a child - get parent and all siblings
+            const parentId = customer.parent_customer_id;
+            accountIds = [parentId];
+            const siblings = customers.filter((c) => c.parent_customer_id === parentId);
+            accountIds.push(...siblings.map((c) => c.id));
+          } else {
+            // Check if this is a parent with children
+            const children = customers.filter((c) => c.parent_customer_id === customer.id);
+            accountIds = [customer.id, ...children.map((c) => c.id)];
+          }
+          
+          // Sum dues across all linked accounts
+          return sales
+            .filter((s) => s.customer_id && accountIds.includes(s.customer_id))
+            .reduce((sum, s) => sum + s.due_amount, 0);
+        })()}
 
         onSellAgain={() => {
           setSheetOpen(false);
@@ -576,14 +609,15 @@ export default function SalesPage() {
           setSaleSheetOpen(true);
         }}
 
-
-
-        onDeleteSale={async () => {
+        onDeleteSale={async (action: "advance" | "settle_dues") => {
           if (!selectedSale) return;
-          if (!confirm("Are you sure you want to delete this sale?")) return;
           try {
-            await api.delete(Endpoints.saleById(selectedSale.id));
-            toast.success("Sale deleted");
+            await api.delete(`${Endpoints.saleById(selectedSale.id)}?action=${action}`);
+            const actionMessages = {
+              advance: "Sale deleted. Payment added to advance.",
+              settle_dues: "Sale deleted. Payment used to settle dues."
+            };
+            toast.success(actionMessages[action]);
             setSheetOpen(false);
             await refreshAll();
           } catch (err) {

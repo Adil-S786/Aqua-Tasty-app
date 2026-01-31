@@ -17,6 +17,7 @@ export default function ProfilePopup({
   onPayDueClick,
   onUpdateCustomerFromPopup,
   allCustomers = [], // ⭐ NEW: Pass all customers for linking
+  onOpenCustomerProfile, // ⭐ NEW: Callback to open another customer's profile
 
   // ⭐ Walk-in / read-only mode
   disableEdit = false,
@@ -28,6 +29,7 @@ export default function ProfilePopup({
   onPayDueClick?: (customer: any) => void;
   onUpdateCustomerFromPopup: (updated: any) => void;
   allCustomers?: any[]; // ⭐ NEW
+  onOpenCustomerProfile?: (customer: any) => void; // ⭐ NEW
   disableEdit?: boolean;
 }) {
   const [sales, setSales] = useState<any[]>([]);
@@ -38,7 +40,7 @@ export default function ProfilePopup({
   const [editOpen, setEditOpen] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   const [localCustomer, setLocalCustomer] = useState(customer);
-  const [billFilter, setBillFilter] = useState<"all" | "dues" | "dues+3">("dues"); // New filter state
+  const [billFilter, setBillFilter] = useState<"all" | "dues" | "dues+3" | "payments">("dues"); // New filter state
   
   // ⭐ NEW: Linked accounts state
   const [linkedAccounts, setLinkedAccounts] = useState<any>(null);
@@ -188,7 +190,7 @@ export default function ProfilePopup({
   };
 
   // Apply bill filter
-  const applyBillFilter = (allSalesData: any[], filter: "all" | "dues" | "dues+3") => {
+  const applyBillFilter = (allSalesData: any[], filter: "all" | "dues" | "dues+3" | "payments") => {
     let filtered = [...allSalesData];
 
     if (filter === "dues") {
@@ -202,6 +204,9 @@ export default function ProfilePopup({
         .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 3);
       filtered = [...duesales, ...paidSales].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } else if (filter === "payments") {
+      // Only show payment records
+      filtered = filtered.filter((s: any) => s.isPaymentOnly === true);
     }
     // "all" shows everything
 
@@ -209,7 +214,14 @@ export default function ProfilePopup({
     filtered.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     setSales(filtered);
-    setTotalDue(filtered.reduce((sum: number, s: any) => sum + s.due_amount, 0));
+    
+    // Calculate total based on filter
+    if (filter === "payments") {
+      // For payments filter, show total payments received
+      setTotalDue(filtered.reduce((sum: number, s: any) => sum + (s.amount_paid || 0), 0));
+    } else {
+      setTotalDue(filtered.reduce((sum: number, s: any) => sum + s.due_amount, 0));
+    }
     
     // ⭐ DEBUG: Log filtered sales to console
     console.log('🔍 Filtered Sales:', filtered.map(s => ({
@@ -515,13 +527,26 @@ export default function ProfilePopup({
 
                     {/* Unlink Account - Show only if customer has parent */}
                     {localCustomer.parent_customer_id && (
-                      <button
-                        onClick={handleUnlink}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-sm transition-colors"
-                      >
-                        <Unlink size={16} />
-                        Unlink
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            const parent = allCustomers.find(c => c.id === localCustomer.parent_customer_id);
+                            if (parent && onOpenCustomerProfile) {
+                              onOpenCustomerProfile(parent); // Parent handler will close and reopen
+                            }
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm transition-colors"
+                        >
+                          👆 Parent
+                        </button>
+                        <button
+                          onClick={handleUnlink}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-sm transition-colors"
+                        >
+                          <Unlink size={16} />
+                          Unlink
+                        </button>
+                      </>
                     )}
                   </>
                 )}
@@ -607,11 +632,12 @@ export default function ProfilePopup({
                     {/* Filter Dropdown */}
                     <select
                       value={billFilter}
-                      onChange={(e) => setBillFilter(e.target.value as "all" | "dues" | "dues+3")}
+                      onChange={(e) => setBillFilter(e.target.value as "all" | "dues" | "dues+3" | "payments")}
                       className="px-3 py-1 text-sm border rounded-lg bg-white dark:bg-[#062E33] dark:text-white"
                     >
                       <option value="dues">Only Dues</option>
                       <option value="dues+3">Dues + 3 Entries</option>
+                      <option value="payments">Only Payments</option>
                       <option value="all">All Time</option>
                     </select>
                   </div>
@@ -678,10 +704,12 @@ export default function ProfilePopup({
                         )}
                         <td className="p-2">Total</td>
                         <td className="text-center p-2 text-blue-700">
-                          {sales.reduce((sum: number, s: any) => sum + (s.total_jars || 0), 0)}
+                          {billFilter !== "payments" ? sales.reduce((sum: number, s: any) => sum + (s.total_jars || 0), 0) : "—"}
                         </td>
                         <td></td><td></td>
-                        <td className="text-center p-2 text-red-700">₹{totalDue.toFixed(2)}</td>
+                        <td className={`text-center p-2 ${billFilter === "payments" ? "text-green-700" : "text-red-700"}`}>
+                          {billFilter === "payments" ? `₹${totalDue.toFixed(2)} Received` : `₹${totalDue.toFixed(2)}`}
+                        </td>
                       </tr>
                     </tfoot>
                   )}

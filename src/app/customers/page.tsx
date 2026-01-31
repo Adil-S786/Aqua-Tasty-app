@@ -603,7 +603,7 @@ export default function CustomersPage() {
             {/* ✅ Profile Popup */}
             {profileOpen && selectedCustomer && (
                 <ProfilePopup
-                    key={selectedCustomer.id}
+                    key={`profile-${selectedCustomer.id}`}
                     isOpen={profileOpen}
                     onClose={async () => {
                         setProfileOpen(false);
@@ -617,6 +617,16 @@ export default function CustomersPage() {
                     customer={{ ...selectedCustomer }}
                     refreshAll={refreshAll}
                     allCustomers={customers}
+
+                    // ⭐ NEW: Navigate to another customer's profile
+                    onOpenCustomerProfile={(cust) => {
+                        // Close and reopen with new customer to force re-render
+                        setProfileOpen(false);
+                        setTimeout(() => {
+                            setSelectedCustomer({ ...cust });
+                            setProfileOpen(true);
+                        }, 50);
+                    }}
 
                     // ⭐ NEW FIX — pass updated data back
                     onUpdateCustomerFromPopup={(updated) => {

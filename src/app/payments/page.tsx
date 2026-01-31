@@ -123,6 +123,24 @@ export default function PaymentHistoryPage() {
     return filtered;
   }, [payments, search, filter, sortBy, dateRange, calendarIsActive]);
 
+  // ⭐ NEW: Summary calculation
+  const summary = useMemo(() => {
+    const totalAmount = filteredPayments.reduce((sum, p) => sum + p.amount_paid, 0);
+    const profiledPayments = filteredPayments.filter(p => p.customer_id !== null);
+    const walkinPayments = filteredPayments.filter(p => p.customer_id === null);
+    const uniqueCustomers = new Set(filteredPayments.map(p => p.customer_name)).size;
+    
+    return {
+      count: filteredPayments.length,
+      totalAmount,
+      profiledCount: profiledPayments.length,
+      profiledAmount: profiledPayments.reduce((sum, p) => sum + p.amount_paid, 0),
+      walkinCount: walkinPayments.length,
+      walkinAmount: walkinPayments.reduce((sum, p) => sum + p.amount_paid, 0),
+      uniqueCustomers,
+    };
+  }, [filteredPayments]);
+
   const filterLabel = {
     today: "Today",
     yesterday: "Yesterday",
@@ -280,6 +298,28 @@ export default function PaymentHistoryPage() {
             <option value="amount-desc">Sort: Amount ↓</option>
             <option value="amount-asc">Sort: Amount ↑</option>
           </select>
+        </div>
+
+        {/* ⭐ NEW: Summary Section */}
+        <div className="bg-white/60 backdrop-blur-xl p-3 rounded-xl shadow-md">
+          <div className="grid grid-cols-4 gap-3">
+            <div>
+              <div className="text-sm text-gray-600">Records</div>
+              <div className="text-lg font-semibold">{summary.count}</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Total Received</div>
+              <div className="text-lg font-semibold text-green-600">₹{summary.totalAmount.toFixed(0)}</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Profiled</div>
+              <div className="text-lg font-semibold text-blue-600">₹{summary.profiledAmount.toFixed(0)}</div>
+            </div>
+            <div>
+              <div className="text-sm text-gray-600">Walk-in</div>
+              <div className="text-lg font-semibold text-gray-600">₹{summary.walkinAmount.toFixed(0)}</div>
+            </div>
+          </div>
         </div>
 
         {/* Payment Table */}
